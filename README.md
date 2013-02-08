@@ -69,3 +69,15 @@ queue (in addition to any other namespacing you've done).
 
 Localized queues are the default. Just set this to "false" if you want
 to turn it off.
+
+# Misc Notes
+I created this as a drop-in solution for the anemone gem. The idea is to
+swap out anemone's link and page queues with SuperQueues, and solve the
+infinite memory problem that plagues the gem. I've yet to test this with
+a live crawl, but that'll happen in the next week or so.
+
+I bring this up, because you may notice some peculiarities in the code
+that arise from its specific intended use. For instance, I check to see
+if an object is a URL string before pushing it, and if it is, I push it
+as a string; all other objects get marshalled and then base64-encoded
+before being pushed.
