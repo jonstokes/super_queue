@@ -12,31 +12,32 @@ production yet... as I said, I just wrote it and am starting to test it.
 To create a new one, pass it an options hash. Some options are required,
 and some are optional.
 
-# Required options
+## Required options
 * :name
 * :buffer_size (minimum of 5)
 * :aws_access_key_id
 * :aws_secret_access_key
 
-# Optional options (=> default)
+## Optional options (=> default)
 * :replace_existing_queue => false
 * :namespace => ""
 * :localize_queue => true
+* :visibility_timeout => 30(seconds)
 
 Let's go through these options one at a time.
 
-## Name
+### Name
 This is the name on AWS that you want to give the queue. 
 
-## Buffer size
+### Buffer size
 For responsiveness and other reasons, SuperQueue uses two normal queues
 as buffers at each end of the SQS queue. When you push to a SuperQueue,
 your object goes into @in_buffer, where a polling thread that's blocking
 on @in_buffer(pop) will pop it and push it to SQS.
 
 When you pop from a SuperQueue, it pops from @out_buffer. If @out_buffer
-is empty, it tries to fill the @out_buffer from either SQS or
-@in_buffer. Note that there's no polling thread that's constantly trying
+is empty, it wakes a thread that tries to fill the @out_buffer from either SQS or
+@in_buffer. Note that there's no constantly-running polling thread that's trying
 to fill @out_buffer, because that would run up the number of SQS
 requests and hence the cost. SuperQueue tries to generate only one SQS
 request per action (i.e. push, pop, size).
@@ -49,17 +50,17 @@ Note that with this design, pops from an empty @out_buffer can take a
 long time, depending on the buffer size. Eventually I'll try to optimize
 this a bit more.
 
-## AWS credentials for fog
+### AWS credentials for fog
 This should be obvious.
 
-## Replace existing queue
+### Replace existing queue
 If there's already an SQS queue by this name, delete it, then re_create
 this. Note that a delete_then_recreate on SQS takes a minimum of 60s.
 
-## Namespace
+### Namespace
 If you want to namespace the queue on SQS, you can do that here.
 
-## Localized_queues
+### Localized_queues
 For the application that I developed SuperQueue for (i.e. using with
 Sidekiq), I need the queues to act like local memory. So I don't want
 the same code trying to generate the same queue names on different
@@ -70,7 +71,39 @@ queue (in addition to any other namespacing you've done).
 Localized queues are the default. Just set this to "false" if you want
 to turn it off.
 
-# Misc Notes
+### Visibility timeout 
+Whenever a pop is executed against an empty out_buffer, SuperQueue wakes
+a thread that tries to fill that out_buffer from SQS. Depending on what
+you set the buffer_size attribute at, you could end up with quite a few
+objects in the local out_buffer. If those objects aren't popped from
+@out_buffer within the time window specified by visibility time_out
+(maybe the system crashed and the object was destroyed, maybe the job
+failed, and so on) then they'll become available again in the SQS queue.
+
+The upside of this arrangement is that if the SuperQueue is somehow destroyed
+with objects still in the out_buffer, those objects are not
+lost and will become available again in SQS to be popped. The downside is that you must select both the visibility_timeout
+and buffer_size attributes in tandem with each other.
+
+If the out_buffer
+is too large and the visibility_timeout is too small, objects in
+out_buffer may timeout and you could lose them if the
+SuperQueue dies. Or, an even bigger danger in this scenario is that
+objects languishing in out_buffer will become
+visible again in SQS and could be popped again from SQS, so you'd get dupes.
+
+When in doubt, set the visibility_timeout for longer than you think
+you'll need, because whenever an object is actually popped from @out_buffer it gets
+deleted permanently from the SQS queue.
+
+In a future version, I'll have the queue dynamically extend the
+visibility_timeout of objects that are languishing in out_buffer, so
+that this isn't so much of a worry.
+
+For more on this attribute, see [this page on
+Amazon](http://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/AboutVT.html).
+
+## Misc Notes
 I created this as a drop-in solution for the anemone gem. The idea is to
 swap out anemone's link and page queues with SuperQueues, and solve the
 infinite memory problem that plagues the gem. I've yet to test this with

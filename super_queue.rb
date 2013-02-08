@@ -108,12 +108,14 @@ class SuperQueue
     raise "Minimun :buffer_size is 5." unless opts[:buffer_size] >= 5
     raise "AWS credentials :aws_access_key_id and :aws_secret_access_key required!" unless opts[:aws_access_key_id] && opts[:aws_secret_access_key]
     raise "Parameter :name required!" unless opts[:name]
+    raise "Visbility timeout must be an integer (in seconds)!" unless opts[:visibility_timeout] && opts[:visibility_timeout].is_a?(Integer)
   end
 
   def initialize_sqs(opts)
     create_sqs_connection(opts)
     create_sqs_queue(opts)
     check_for_queue_creation_success
+    @sqs.set_queue_attributes(q_url, "VisibilityTimeout", opts[:visibility_timeout]) if opts[:visibility_timeout]
   end
 
   def create_sqs_connection(opts)
