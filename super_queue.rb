@@ -40,14 +40,14 @@ class SuperQueue
       while true
         if @out_buffer.empty?
           if fill_out_buffer_from_sqs_queue || fill_out_buffer_from_in_buffer
-            return @out_buffer.pop(non_block)
+            return pop_out_buffer(non_block)
           else
             raise ThreadError, "queue empty" if non_block
             @waiting.push Thread.current
             @mutex.sleep
           end
         else
-          return @out_buffer.pop(non_block)
+          return pop_out_buffer(non_block)
         end
       end
     }
@@ -158,9 +158,8 @@ class SuperQueue
     handle = message.body['Message'].first['ReceiptHandle']
     ser_obj = message.body['Message'].first['Body']
     return nil if ser_obj.nil? || ser_obj.empty?
-    @sqs.delete_message(q_url, handle)
-    return ser_obj if is_a_link?(ser_obj)
-    Marshal.load(Base64.decode64(ser_obj))
+    return {:handle => handle, :payload => ser_obj} if is_a_link?(ser_obj)
+    { :handle => handle, :payload => Marshal.load(Base64.decode64(ser_obj)) }
   end
 
   def q_url
@@ -249,6 +248,12 @@ class SuperQueue
       @out_buffer.push @in_buffer.pop
     end
     !@out_buffer.empty?
+  end
+
+  def pop_out_buffer(non_block)
+    m = @out_buffer.pop(non_block)
+    @sqs.delete_message(q_url, m[:handle])
+    m[:payload]
   end
 
   def queue_name
