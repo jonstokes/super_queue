@@ -20,6 +20,7 @@ class SuperQueue
     @out_buffer = SizedQueue.new(opts[:buffer_size])
 
     @sqs_head_tracker = Thread.new { poll_sqs_head }
+    @sqs_tail_tracker = Thread.new { poll_sqs_tail }
   end
 
   def push(p)
@@ -76,6 +77,7 @@ class SuperQueue
 
   def destroy
     @sqs_head_tracker.terminate
+    @sqs_tail_tracker.terminate
     delete_queue
   end
 
@@ -217,14 +219,29 @@ class SuperQueue
     loop { send_message_to_queue(@in_buffer.pop) }
   end
 
+  def poll_sqs_tail
+    loop do
+      nil_count = 0
+      while (@out_buffer.size < @out_buffer.max) && (nil_count < 5) # If you get nil 5 times in a row, SQS is probably empty
+        m = get_message_from_queue
+        if m.nil?
+          nil_count += 1
+        else
+          @out_buffer.push m
+          nil_count = 0
+        end
+      end unless sqs_length == 0
+      sleep
+    end
+  end
+
   def fill_out_buffer_from_sqs_queue
+    @sqs_tail_tracker.wakeup if @sqs_tail_tracker.stop?
     count = 0
-    while (@out_buffer.size < @out_buffer.max) && (count < @out_buffer.max)
-      m = get_message_from_queue
-      @out_buffer.push m unless m.nil?
+    while @out_buffer.empty? && count != 5
+      sleep 1
       count += 1
     end
-    !@out_buffer.empty?
   end
 
   def fill_out_buffer_from_in_buffer
