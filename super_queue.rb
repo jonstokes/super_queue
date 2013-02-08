@@ -18,7 +18,7 @@ class SuperQueue
 
   def initialize(opts)
     check_opts(opts)
-    @localize_queue = opts[:localize_queue]
+    @localize_queue = opts[:localize_queue].nil? ? true : false
     @queue_name = generate_queue_name(opts)
     initialize_sqs(opts)
 
