@@ -114,7 +114,7 @@ class SuperQueue
   end
 
   def localized?
-    @localize_queue
+    !!@localize_queue
   end
 
   private
