@@ -37,13 +37,8 @@ class SuperQueue
   def pop(non_block=false)
     @mutex.synchronize {
       while true
-        sqs_size = sqs_length # This cuts back on the number of SQS requests
-        if (sqs_size == 0) && buffers_empty?
-          raise ThreadError, "queue empty" if non_block
-          @waiting.push Thread.current
-          @mutex.sleep
-        elsif @out_buffer.empty?
-          if fill_out_buffer_from_sqs_queue(sqs_size) || fill_out_buffer_from_in_buffer
+        if @out_buffer.empty?
+          if fill_out_buffer_from_sqs_queue || fill_out_buffer_from_in_buffer
             return @out_buffer.pop(non_block)
           else
             raise ThreadError, "queue empty" if non_block
@@ -226,9 +221,9 @@ class SuperQueue
     loop { send_message_to_queue(@in_buffer.pop) }
   end
 
-  def fill_out_buffer_from_sqs_queue(sqs_size)
+  def fill_out_buffer_from_sqs_queue
     count = 0
-    while (@out_buffer.size < @out_buffer.max) && (count < sqs_size)
+    while (@out_buffer.size < @out_buffer.max) && (count < sqs_length)
       m = get_message_from_queue
       @out_buffer.push m unless m.nil?
       count += 1
