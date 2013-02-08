@@ -147,16 +147,16 @@ class SuperQueue
 
   def send_message_to_queue(p)
     payload = is_a_link?(p) ? p : Base64.encode64(Marshal.dump(p))
-    sqs.send_message(q_url, payload)
+    @sqs.send_message(q_url, payload)
   end
 
   def get_message_from_queue
-    message = sqs.receive_message(q_url)
+    message = @sqs.receive_message(q_url)
     return nil if  message.body.nil? || message.body['Message'].first.nil?
     handle = message.body['Message'].first['ReceiptHandle']
     ser_obj = message.body['Message'].first['Body']
     return nil if ser_obj.nil? || ser_obj.empty?
-    sqs.delete_message(q_url, handle)
+    @sqs.delete_message(q_url, handle)
     return ser_obj if is_a_link?(ser_obj)
     Marshal.load(Base64.decode64(ser_obj))
   end
@@ -172,14 +172,10 @@ class SuperQueue
     (s[0..6] == "http://") || (s[0..7] == "https://")
   end
 
-  def buffers_empty?
-    @out_buffer.empty? && @in_buffer.empty?
-  end
-
   def delete_queue
     @sqs.delete_queue(q_url)
   end
- 
+
   def generate_queue_name(opts)
     if opts[:namespace] && opts[:localize_queue]
       "#{@namespace}-#{Digest::MD5.hexdigest(local_ip)}-#{opts[:name]}"
@@ -193,7 +189,7 @@ class SuperQueue
   end
 
   def sqs_length
-    body = sqs.get_queue_attributes(q_url, "ApproximateNumberOfMessages").body
+    body = @sqs.get_queue_attributes(q_url, "ApproximateNumberOfMessages").body
     begin
       retval = 0
       if body
@@ -236,5 +232,9 @@ class SuperQueue
       @out_buffer.push @in_buffer.pop
     end
     !@out_buffer.empty?
+  end
+
+  def queue_name
+    @queue_name
   end
 end
