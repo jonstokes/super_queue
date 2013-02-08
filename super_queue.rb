@@ -1,5 +1,4 @@
 require 'fog'
-require 'yaml'
 require 'base64'
 require 'socket'
 require 'digest/md5'
