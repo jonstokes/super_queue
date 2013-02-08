@@ -5,8 +5,6 @@ require 'digest/md5'
 
 class SuperQueue
 
-  attr_reader :queue_name, :sqs, :sqs_queue, :out_buffer, :in_buffer
-
   #Required options:
   #  :name
   #  :buffer_size (minimum of 5)
