@@ -7,15 +7,15 @@ To create a new one, pass it an options hash. Some options are required,
 and some are optional.
 
 # Required options
-  *:name
-  *:buffer_size (minimum of 5)
-  *:aws_access_key_id
-  *:aws_secret_access_key
+* :name
+* :buffer_size (minimum of 5)
+* :aws_access_key_id
+* :aws_secret_access_key
 
 # Optional options (=> default)
-  *:replace_existing_queue => false
-  *:namespace => ""
-  *:localize_queue => true
+* :replace_existing_queue => false
+* :namespace => ""
+* :localize_queue => true
 
 Let's go through these options one at a time.
 
