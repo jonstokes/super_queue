@@ -5,20 +5,10 @@ require 'digest/md5'
 
 class SuperQueue
 
-  #Required options:
-  #  :name
-  #  :buffer_size (minimum of 5)
-  #  :aws_access_key_id
-  #  :aws_secret_access_key
-  #
-  #Optional options (with defaults):
-  #  :replace_existing_queue => false
-  #  :namespace => ""
-  #  :localize_queue => true
-
   def initialize(opts)
     check_opts(opts)
-    @localize_queue = opts[:localize_queue].nil? ? true : false
+    opts[:localize_queue] = true unless opts[:localize_queue] == false
+    @localize_queue = opts[:localize_queue]
     @queue_name = generate_queue_name(opts)
     initialize_sqs(opts)
 
