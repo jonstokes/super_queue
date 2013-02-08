@@ -223,7 +223,7 @@ class SuperQueue
 
   def fill_out_buffer_from_sqs_queue
     count = 0
-    while (@out_buffer.size < @out_buffer.max) && (count < sqs_length)
+    while (@out_buffer.size < @out_buffer.max) && (count < @out_buffer.max)
       m = get_message_from_queue
       @out_buffer.push m unless m.nil?
       count += 1
