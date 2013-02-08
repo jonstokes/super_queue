@@ -18,9 +18,11 @@ class SuperQueue
     @mutex = Mutex.new
     @in_buffer = SizedQueue.new(opts[:buffer_size])
     @out_buffer = SizedQueue.new(opts[:buffer_size])
+    @deletion_queue = Queue.new
 
     @sqs_head_tracker = Thread.new { poll_sqs_head }
     @sqs_tail_tracker = Thread.new { poll_sqs_tail }
+    @garbage_collector = Thread.new { collect_garbage }
   end
 
   def push(p)
@@ -108,7 +110,7 @@ class SuperQueue
     raise "Minimun :buffer_size is 5." unless opts[:buffer_size] >= 5
     raise "AWS credentials :aws_access_key_id and :aws_secret_access_key required!" unless opts[:aws_access_key_id] && opts[:aws_secret_access_key]
     raise "Parameter :name required!" unless opts[:name]
-    raise "Visbility timeout must be an integer (in seconds)!" unless opts[:visibility_timeout] && opts[:visibility_timeout].is_a?(Integer)
+    raise "Visbility timeout must be an integer (in seconds)!" if opts[:visibility_timeout] && !opts[:visibility_timeout].is_a?(Integer)
   end
 
   def initialize_sqs(opts)
@@ -236,6 +238,10 @@ class SuperQueue
     end
   end
 
+  def collect_garbage
+    loop { @sqs.delete_message(q_url, @deletion_queue.pop) }
+  end
+
   def fill_out_buffer_from_sqs_queue
     @sqs_tail_tracker.wakeup if @sqs_tail_tracker.stop?
     count = 0
@@ -254,7 +260,7 @@ class SuperQueue
 
   def pop_out_buffer(non_block)
     m = @out_buffer.pop(non_block)
-    @sqs.delete_message(q_url, m[:handle])
+    @deletion_queue << m[:handle]
     m[:payload]
   end
 
