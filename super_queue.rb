@@ -138,7 +138,11 @@ class SuperQueue
       delete_queue
       puts "Waiting 60s to create new queue..."
       sleep 62 # You must wait 60s after deleting a q to create one with the same name
-      @sqs_queue = @sqs.create_queue(queue_name)
+      if opts[:visibility_timeout]
+        @sqs_queue = @sqs.create_queue(queue_name, {"DefaultVisibilityTimeout" => opts[:visibility_timeout]})
+      else
+        @sqs_queue = @sqs.create_queue(queue_name)
+      end
     end
   end
 
