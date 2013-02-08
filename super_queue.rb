@@ -77,7 +77,7 @@ class SuperQueue
     end until self.empty?
   end
 
-  def destroy
+  def shutdown
     @sqs_head_tracker.terminate
     while !@in_buffer.empty? do
       @sqs.delete_message(q_url, @in_buffer.pop)
@@ -87,6 +87,12 @@ class SuperQueue
     while !@deletion_queue.empty?
       @sqs.delete_message(q_url, @deletion_queue.pop)
     end
+  end
+
+  def destroy
+    @sqs_head_tracker.terminate
+    @sqs_tail_tracker.terminate
+    @garbage_collector.terminate
     delete_queue
   end
 
