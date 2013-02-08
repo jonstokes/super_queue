@@ -7,7 +7,7 @@ class SuperQueue
 
   def initialize(opts)
     check_opts(opts)
-    opts[:localize_queue] = true unless opts[:localize_queue] == false
+    opts[:localize_queue] = true unless opts.has_key? :localized_queue
     @localize_queue = opts[:localize_queue]
     @queue_name = generate_queue_name(opts)
     initialize_sqs(opts)
