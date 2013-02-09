@@ -119,6 +119,7 @@ class SuperQueue
   private
 
   def check_opts(opts)
+    raise "Options can't be nil!" if opts.nil?
     raise "Parameter :buffer_size required!" unless opts[:buffer_size]
     raise "Minimun :buffer_size is 5." unless opts[:buffer_size] >= 5
     raise "AWS credentials :aws_access_key_id and :aws_secret_access_key required!" unless opts[:aws_access_key_id] && opts[:aws_secret_access_key]
