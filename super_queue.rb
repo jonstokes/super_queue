@@ -28,7 +28,7 @@ class SuperQueue
     @in_buffer = SizedQueue.new(opts[:buffer_size])
     @out_buffer = SizedQueue.new(opts[:buffer_size])
     @deletion_queue = Queue.new
-    @mock_queue = Queue.new if SuperQueue.mocking?
+    @mock_length = 0 if SuperQueue.mocking?
 
     @sqs_head_tracker = Thread.new { poll_sqs_head }
     @sqs_tail_tracker = Thread.new { poll_sqs_tail }
@@ -182,7 +182,7 @@ class SuperQueue
   def send_message_to_queue(p)
     payload = is_a_link?(p) ? p : Base64.encode64(Marshal.dump(p))
     @sqs.send_message(q_url, payload)
-    @mock_queue << payload if SuperQueue.mocking?
+    @mock_length += 1 if SuperQueue.mocking?
   end
 
   def get_message_from_queue
@@ -191,6 +191,7 @@ class SuperQueue
     handle = message.body['Message'].first['ReceiptHandle']
     ser_obj = message.body['Message'].first['Body']
     return nil if ser_obj.nil? || ser_obj.empty?
+    @mock_length -= 1 if SuperQueue.mocking?
     return {:handle => handle, :payload => ser_obj} if is_a_link?(ser_obj)
     { :handle => handle, :payload => Marshal.load(Base64.decode64(ser_obj)) }
   end
@@ -223,6 +224,7 @@ class SuperQueue
   end
 
   def sqs_length
+    return @mock_length if SuperQueue.mocking?
     body = @sqs.get_queue_attributes(q_url, "ApproximateNumberOfMessages").body
     begin
       retval = 0
