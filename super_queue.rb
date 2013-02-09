@@ -5,6 +5,15 @@ require 'digest/md5'
 
 class SuperQueue
 
+  def self.mock!
+    @@mock = true
+    Fog.mock!
+  end
+
+  def self.mocking?
+    defined?(@@mock) && @@mock
+  end
+
   def initialize(opts)
     check_opts(opts)
     opts[:localize_queue] = true unless opts.has_key? :localized_queue
@@ -19,6 +28,7 @@ class SuperQueue
     @in_buffer = SizedQueue.new(opts[:buffer_size])
     @out_buffer = SizedQueue.new(opts[:buffer_size])
     @deletion_queue = Queue.new
+    @mock_queue = Queue.new if SuperQueue.mocking?
 
     @sqs_head_tracker = Thread.new { poll_sqs_head }
     @sqs_tail_tracker = Thread.new { poll_sqs_tail }
@@ -172,6 +182,7 @@ class SuperQueue
   def send_message_to_queue(p)
     payload = is_a_link?(p) ? p : Base64.encode64(Marshal.dump(p))
     @sqs.send_message(q_url, payload)
+    @mock_queue << payload if SuperQueue.mocking?
   end
 
   def get_message_from_queue

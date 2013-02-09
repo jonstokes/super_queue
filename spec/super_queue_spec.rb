@@ -86,4 +86,15 @@ describe SuperQueue do
     end
   end
 
+  describe "#push" do
+    before :each do
+      @queue = SuperQueue.new(@defaults)
+    end
+
+    it "should add an element" do
+      @queue.push :item
+      @queue.length.should == 1
+    end
+  end
+
 end
