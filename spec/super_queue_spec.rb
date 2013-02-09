@@ -18,6 +18,21 @@ describe SuperQueue do
       queue.should be_an_instance_of SuperQueue
     end
 
+    it "should create a new SuperQueue with a url" do
+      queue = SuperQueue.new(@defaults)
+      queue.url.should include("http")
+    end
+
+    it "should create a new SuperQueue with the correct name" do
+      queue = SuperQueue.new(@defaults)
+      queue.url.should include(@defaults[:name])
+    end
+
+    it "should create a new localized SuperQueue by default" do
+      queue = SuperQueue.new(@defaults)
+      queue.should be_localized
+    end
+
     it "should require non-nil options" do
       expect {
         SuperQueue.new(nil)
