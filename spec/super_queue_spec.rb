@@ -13,7 +13,17 @@ describe SuperQueue do
   end
 
   describe "#new" do
-    queue = SuperQueue.new(@default_required_options)
-    queue.should be_an_instance_of SuperQueue
+    it "should create a new SuperQueue" do
+      queue = SuperQueue.new(@default_required_options)
+      queue.should be_an_instance_of SuperQueue
+    end
   end
+
+  it "should require an AWS access key ID" do
+    @default_required_options.delete(:aws_access_key_id)
+    expect {
+      SuperQueue.new(@default_required_options)
+    }.to raise_error("AWS credentials :aws_access_key_id and :aws_secret_access_key required!")
+  end
+
 end
