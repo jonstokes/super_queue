@@ -128,4 +128,18 @@ describe SuperQueue do
     end
   end
 
+  describe "#empty?" do
+    it "should should return true if the queue is empty" do
+      queue = SuperQueue.new(@defaults)
+      queue.should be_empty
+    end
+
+    it "should should return false if the queue is not empty" do
+      queue = SuperQueue.new(@defaults)
+      queue.push :item1
+      sleep 0.5 # to let items propagate from in_buffer to SQS queue
+      queue.should_not be_empty
+    end
+  end
+
 end
