@@ -7,7 +7,7 @@ Gem::Specification.new do |s|
   s.authors     = ["Jon Stokes"]
   s.email       = 'jon@jonstokes.com'
   s.files       = ["lib/super_queue.rb"]
-  s.homepage    = 'http://rubygems.org/gems/super_queue'
+  s.homepage    = 'https://github.com/jonstokes/super_queue'
 
   s.add_dependency('fog', '~>1.9.0')
 end
