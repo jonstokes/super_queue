@@ -145,22 +145,22 @@ Amazon](http://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuid
 In addition to support for all the normal Queue methods, SuperQueue has
 the following additional methods that reflect its SQS back end:
 
-### url
+### #url
 Returns the URL to the actual SQS queue.
 
-### localized?
+### #localized?
 Returns whether it's localized or not.
 
-### name
+### #name
 Returns the full name of the queue on SQS, with any namespace and
 localization.
 
-### shutdown
+### #shutdown
 Gracefully shuts down the queue by making sure all local buffers are
 emptied and any garbage is collected. Call this if you plan to re-use
 the queue and don't want to lose any data.
 
-### destroy
+### #destroy
 Terminates all the queue-related threads immediately and deletes the
 queue from SQS. If you call this, then you'll need to wait 60 seconds
 before re-creating a queue with the exact same name, namespace, and
