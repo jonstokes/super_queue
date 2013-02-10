@@ -39,6 +39,7 @@ describe SuperQueue do
 
       it "should create a new localized SuperQueue by default" do
         @queue.should be_localized
+        @queue.name.should include("f528764d624db129b32c21fbca0cb8d6")
       end
     end
 
