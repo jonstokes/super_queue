@@ -16,12 +16,9 @@ Here's an short code example:
 ```ruby
 opts = {
   :name                  => "MyQueue",
-  :namespace             => "AllMyQueues"
   :buffer_size           => 10,
   :aws_access_key_id     => "12234abc",
   :aws_secret_access_key => "sdafsdl123212",
-  :visibility_timeout    => 60,
-  :localize_queue        => false
 }
 queue = SuperQueue.new(opts)
 #=> SQS queue XML stuff...
@@ -39,10 +36,6 @@ queue.pop
 #=> "foo"
 queue.deq
 #=> "bar"
-queue.name
-#=> "AllMyQueues-MyQueue"
-queue.localized?
-#=> false
 queue.url
 #=> "http://amazon-url/for-my-queue/AllMyQueues-MyQueue"
 queue.shutdown
