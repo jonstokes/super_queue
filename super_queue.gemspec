@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name        = 'SuperQueue'
-  s.version     = '0.0.1'
+  s.version     = '0.0.5'
   s.date        = '2010-02-09'
   s.summary     = "An SQS-backed queue structure for ruby that works just like a normal queue, except it's essentially infinite and can use very little memory."
   s.description = "A an SQS-backed queue."
