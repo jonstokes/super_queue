@@ -3,7 +3,7 @@ require 'spec_helper'
 describe SuperQueue do
 
   before :each do
-    Fog.mock!
+    SuperQueue.mock!
     @defaults = {
       :aws_access_key_id => "abc123",
       :aws_secret_access_key => "123abc",
@@ -34,6 +34,7 @@ describe SuperQueue do
 
       it "should create a new SuperQueue with the correct name" do
         @queue.url.should include(@defaults[:name])
+        @queue.name.should include(@defaults[:name])
       end
 
       it "should create a new localized SuperQueue by default" do
@@ -87,13 +88,42 @@ describe SuperQueue do
   end
 
   describe "#push" do
-    before :each do
-      @queue = SuperQueue.new(@defaults)
-    end
-
     it "should add an element" do
-      @queue.push :item
-      @queue.length.should == 1
+      queue = SuperQueue.new(@defaults)
+      queue.push "bar"
+      sleep 0.5 # to let item propagate from in_buffer to SQS queue
+      queue.length.should == 1
+      queue.clear
+    end
+  end
+
+  describe "#pop" do
+    it "should remove an element" do
+      queue = SuperQueue.new(@defaults)
+      queue.push "foo"
+      sleep 0.5 # to let item propagate from in_buffer to SQS queue
+      queue.pop(true).should == "foo"
+    end
+  end
+
+  describe "#clear" do
+    it "should clear the queue" do
+      queue = SuperQueue.new(@defaults)
+      queue.push :item1
+      queue.push :item2
+      sleep 0.5 # to let items propagate from in_buffer to SQS queue
+      queue.clear
+      queue.length.should == 0
+    end
+  end
+
+  describe "#length" do
+    it "should give the length of the queue" do
+      queue = SuperQueue.new(@defaults)
+      queue.push :item1
+      queue.push :item2
+      sleep 0.5 # to let items propagate from in_buffer to SQS queue
+      queue.length.should == 2
     end
   end
 
