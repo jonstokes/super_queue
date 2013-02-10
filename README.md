@@ -3,7 +3,7 @@ SuperQueue
 
 SuperQueue is a thread-safe, SQS-backed queue structure for ruby that works just like a normal queue, except it's essentially infinite because it uses SQS on the back end.
 
-To install, just "gem install SuperQueue".
+To install, just "gem install super_queue".
 
 To create a new SuperQueue, pass it an options hash. Some options are required,
 and some are optional. When you're done with it, you should ideally call
