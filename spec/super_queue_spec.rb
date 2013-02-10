@@ -7,7 +7,6 @@ describe SuperQueue do
     @defaults = {
       :aws_access_key_id => "abc123",
       :aws_secret_access_key => "123abc",
-      :name => "rspec-test",
       :buffer_size => 5
     }
   end
@@ -30,11 +29,6 @@ describe SuperQueue do
 
       it "should create a new SuperQueue with a url" do
         @queue.url.should include("http")
-      end
-
-      it "should create a new SuperQueue with the correct name" do
-        @queue.url.should include(@defaults[:name])
-        @queue.name.should include(@defaults[:name])
       end
 
       it "should create a new localized SuperQueue by default" do
@@ -72,18 +66,20 @@ describe SuperQueue do
         }.to raise_error(RuntimeError, "Minimun :buffer_size is 5.")
       end
 
-      it "should require a queue name" do
-        @defaults.delete(:name)
-        expect {
-          SuperQueue.new(@defaults)
-        }.to raise_error(RuntimeError, "Parameter :name required!")
-      end
-
       it "should require that visibility timeout be an integer" do
         @defaults.merge!(:visibility_timeout => "a")
         expect {
           SuperQueue.new(@defaults)
         }.to raise_error(RuntimeError, "Visbility timeout must be an integer (in seconds)!")
+      end
+    end
+
+    describe "with optional options" do
+      it "should use a supplied name" do
+        @defaults.merge!(:name => "rspec-test")
+        @queue = SuperQueue.new(@defaults)
+        @queue.url.should include(@defaults[:name])
+        @queue.name.should include(@defaults[:name])
       end
     end
   end

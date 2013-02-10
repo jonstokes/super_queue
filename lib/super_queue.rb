@@ -133,7 +133,6 @@ class SuperQueue
     raise "Parameter :buffer_size required!" unless opts[:buffer_size]
     raise "Minimun :buffer_size is 5." unless opts[:buffer_size] >= 5
     raise "AWS credentials :aws_access_key_id and :aws_secret_access_key required!" unless opts[:aws_access_key_id] && opts[:aws_secret_access_key]
-    raise "Parameter :name required!" unless opts[:name]
     raise "Visbility timeout must be an integer (in seconds)!" if opts[:visibility_timeout] && !opts[:visibility_timeout].is_a?(Integer)
   end
 
@@ -212,15 +211,21 @@ class SuperQueue
   end
 
   def generate_queue_name(opts)
+    q_name = opts[:name] || random_name
     if opts[:namespace] && opts[:localize_queue]
-      "#{@namespace}-#{Digest::MD5.hexdigest(local_ip)}-#{opts[:name]}"
+      "#{@namespace}-#{Digest::MD5.hexdigest(local_ip)}-#{q_name}"
     elsif opts[:namespace]
-      "#{@namespace}-#{opts[:name]}"
+      "#{@namespace}-#{q_name}"
     elsif opts[:localize_queue]
-      "#{Digest::MD5.hexdigest(local_ip)}-#{opts[:name]}"
+      "#{Digest::MD5.hexdigest(local_ip)}-#{q_name}"
     else
-      opts[:name]
+      q_name
     end
+  end
+
+  def random_name
+    o =  [('a'..'z'),('A'..'Z')].map{|i| i.to_a}.flatten
+    (0...15).map{ o[rand(o.length)] }.join
   end
 
   def sqs_length

@@ -1,1 +1,1 @@
-require_relative '../super_queue.rb'
+require_relative '../lib/super_queue.rb'
