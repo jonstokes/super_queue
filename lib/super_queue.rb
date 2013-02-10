@@ -290,14 +290,14 @@ class SuperQueue
 
   def fill_out_buffer_from_in_buffer
     while (@out_buffer.size < @out_buffer.max) && !@in_buffer.empty?
-      @out_buffer.push @in_buffer.pop
+      @out_buffer.push(:payload => @in_buffer.pop)
     end
     !@out_buffer.empty?
   end
 
   def pop_out_buffer(non_block)
     m = @out_buffer.pop(non_block)
-    @deletion_queue << m[:handle]
+    @deletion_queue << m[:handle] if m[:handle]
     m[:payload]
   end
 
