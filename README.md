@@ -174,6 +174,12 @@ applications, so I may not get around to troubleshooting this any time
 soon. But if absolutely strict ordering matters for you, then SuperQueue isn't a
 good choice.
 
+## Mocking
+If you're running tests with SuperQueue, you probably don't want to work
+with a live SQS queue for time and cost reasons. So just call
+SuperQueue.mock!, and SuperQueue will use fog's mock library to simulate
+SQS calls. All functions should still work in mocking mode.
+
 ## Misc Notes
 I created this as a drop-in solution for the anemone gem. The idea is to
 swap out anemone's link and page queues with SuperQueues, and solve the

@@ -155,6 +155,4 @@ describe SuperQueue do
       expect { queue.destroy }.not_to raise_error
     end
   end
-
-
 end
