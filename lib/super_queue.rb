@@ -132,7 +132,7 @@ class SuperQueue
 
   def check_opts(opts)
     raise "Options can't be nil!" if opts.nil?
-    raise "Minimun :buffer_size is 5." unless opts[:buffer_size] && (opts[:buffer_size] >= 5)
+    raise "Minimun :buffer_size is 5." if opts[:buffer_size] && (opts[:buffer_size] < 5)
     raise "AWS credentials :aws_access_key_id and :aws_secret_access_key required!" unless opts[:aws_access_key_id] && opts[:aws_secret_access_key]
     raise "Visbility timeout must be an integer (in seconds)!" if opts[:visibility_timeout] && !opts[:visibility_timeout].is_a?(Integer)
   end

@@ -7,7 +7,6 @@ describe SuperQueue do
     @defaults = {
       :aws_access_key_id => "abc123",
       :aws_secret_access_key => "123abc",
-      :buffer_size => 5
     }
   end
 
