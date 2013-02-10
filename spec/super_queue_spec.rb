@@ -142,4 +142,19 @@ describe SuperQueue do
     end
   end
 
+  describe "#shutdown" do
+    it "should not blow up" do
+      queue = SuperQueue.new(@defaults)
+      expect { queue.shutdown }.not_to raise_error
+    end
+  end
+
+  describe "#destroy" do
+    it "should not blow up" do
+      queue = SuperQueue.new(@defaults)
+      expect { queue.destroy }.not_to raise_error
+    end
+  end
+
+
 end
