@@ -17,6 +17,8 @@ class SuperQueue
   def initialize(opts)
     check_opts(opts)
     opts[:localize_queue] = true unless opts.has_key? :localized_queue
+    opts[:buffer_size] = 100 unless opts.has_key? :buffer_size
+
     @localize_queue = opts[:localize_queue]
     @queue_name = generate_queue_name(opts)
     initialize_sqs(opts)
@@ -130,8 +132,7 @@ class SuperQueue
 
   def check_opts(opts)
     raise "Options can't be nil!" if opts.nil?
-    raise "Parameter :buffer_size required!" unless opts[:buffer_size]
-    raise "Minimun :buffer_size is 5." unless opts[:buffer_size] >= 5
+    raise "Minimun :buffer_size is 5." unless opts[:buffer_size] && (opts[:buffer_size] >= 5)
     raise "AWS credentials :aws_access_key_id and :aws_secret_access_key required!" unless opts[:aws_access_key_id] && opts[:aws_secret_access_key]
     raise "Visbility timeout must be an integer (in seconds)!" if opts[:visibility_timeout] && !opts[:visibility_timeout].is_a?(Integer)
   end

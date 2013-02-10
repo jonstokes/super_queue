@@ -52,13 +52,6 @@ describe SuperQueue do
         }.to raise_error(RuntimeError, "AWS credentials :aws_access_key_id and :aws_secret_access_key required!")
       end
 
-      it "should require a buffer size" do
-        @defaults.delete(:buffer_size)
-        expect {
-          SuperQueue.new(@defaults)
-        }.to raise_error(RuntimeError, "Parameter :buffer_size required!")
-      end
-
       it "should require a minimum buffer size" do
         @defaults.merge!(:buffer_size => 0)
         expect {

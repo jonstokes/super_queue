@@ -15,8 +15,6 @@ Here's an short code example:
 
 ```ruby
 opts = {
-  :name                  => "MyQueue",
-  :buffer_size           => 10,
   :aws_access_key_id     => "12234abc",
   :aws_secret_access_key => "sdafsdl123212",
 }
@@ -37,26 +35,33 @@ queue.pop
 queue.deq
 #=> "bar"
 queue.url
-#=> "http://amazon-url/for-my-queue/AllMyQueues-MyQueue"
-queue.shutdown
+#=> "http://amazon-url/for-my-queue/alDkdFGjfglYUj"
+queue.destroy
 ```
 
 ## Required options
-* :name
-* :buffer_size (minimum of 5)
 * :aws_access_key_id
 * :aws_secret_access_key
 
 ## Optional options (=> default)
+* :name                   =>       #randomly generated name
+* :buffer_size            => 100   #5 is the minimum
 * :replace_existing_queue => false
-* :namespace => ""
-* :localize_queue => true
-* :visibility_timeout => 30(seconds)
+* :namespace              => ""
+* :localize_queue         => true
+* :visibility_timeout     => 30    #in seconds. Max is 12 hours.
 
 Let's go through these options one at a time.
 
+### AWS credentials for fog
+This should be obvious.
+
 ### Name
-This is the name on AWS that you want to give the queue. 
+This is the name on AWS that you want to give the queue. It's
+recommended to use this if you don't plan to destroy the queue via the
+destroy method. Otherwise, SuperQueue generates a random name for it,
+and you'll end up with these randomly named SQS queues on your AWS
+account.
 
 ### Buffer size
 For responsiveness and other reasons, SuperQueue uses two normal queues
@@ -74,9 +79,6 @@ request per action (i.e. push, pop, size, etc.).
 At any rate, you can tune the buffer size to trade off between memory
 usage and performance (i.e larger buffer == more memory usage and more
 performance).
-
-### AWS credentials for fog
-This should be obvious.
 
 ### Replace existing queue
 If there's already an SQS queue by this name, delete it, then re_create
