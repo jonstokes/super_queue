@@ -151,7 +151,7 @@ describe SuperQueue do
       queue << "bar"
       queue.pop
       queue.length
-      queue.sqs_requests.should > 1
+      queue.sqs_requests.should_not == 0
     end
   end
 end

@@ -138,9 +138,12 @@ class SuperQueue
   def initialize_sqs(opts)
     create_sqs_connection(opts)
     create_sqs_queue(opts)
-    check_for_queue_creation_success
-    @sqs.set_queue_attributes(q_url, "VisibilityTimeout", opts[:visibility_timeout]) if opts[:visibility_timeout]
-    @request_count += 1
+    if opts[:replace_existing_queue] && (sqs_length > 0)
+      delete_queue
+      puts "Waiting 60s to create new queue..."
+      sleep 62 # You must wait 60s after deleting a q to create one with the same name
+      create_sqs_queue(opts)
+    end
   end
 
   def create_sqs_connection(opts)
@@ -156,18 +159,24 @@ class SuperQueue
   end
 
   def create_sqs_queue(opts)
-    @sqs_queue = @sqs.create_queue(queue_name)
-    if opts[:replace_existing_queue] && (sqs_length > 0)
-      delete_queue
-      puts "Waiting 60s to create new queue..."
-      sleep 62 # You must wait 60s after deleting a q to create one with the same name
-      if opts[:visibility_timeout]
-        @sqs_queue = @sqs.create_queue(queue_name, {"DefaultVisibilityTimeout" => opts[:visibility_timeout]})
-      else
-        @sqs_queue = @sqs.create_queue(queue_name)
-      end
+    retries = 0
+    begin
+      @sqs_queue = new_sqs_queue(opts)
+      check_for_queue_creation_success
+    rescue RuntimeError => e
+      sleep 0.5
+      retries += 1
+      (retries >= 10) ? retry : raise(e)
     end
+  end
+
+  def new_sqs_queue(opts)
     @request_count += 1
+    if opts[:visibility_timeout]
+      @sqs.create_queue(queue_name, {"DefaultVisibilityTimeout" => opts[:visibility_timeout]})
+    else
+      @sqs.create_queue(queue_name)
+    end
   end
 
   def check_for_queue_creation_success
