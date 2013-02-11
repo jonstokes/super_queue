@@ -32,7 +32,7 @@ class SuperQueue
     @mock_length = 0 if SuperQueue.mocking?
 
     @sqs_tracker = Thread.new { poll_sqs }
-    #@garbage_collector = Thread.new { collect_garbage }
+    @gc = Thread.new { collect_garbage }
   end
 
   def push(p)
@@ -93,14 +93,14 @@ class SuperQueue
   def shutdown
     @sqs_tracker.terminate
     @mutex.synchronize { clear_in_buffer }
-    #@garbage_collector.terminate
+    @gc.terminate
     @mutex.synchronize { clear_deletion_queue }
   end
 
   def destroy
     @sqs_tracker.terminate
     #@sqs_tail_tracker.terminate
-    #@garbage_collector.terminate
+    @gc.terminate
     delete_queue
   end
 
@@ -130,8 +130,14 @@ class SuperQueue
     loop do
       @mutex.synchronize { fill_out_buffer_from_sqs_queue || fill_out_buffer_from_in_buffer } if @out_buffer.empty?
       @mutex.synchronize { clear_in_buffer } if !@in_buffer.empty? && (@in_buffer.size > @buffer_size)
-      @mutex.synchronize { clear_deletion_queue } if !@deletion_queue.empty? && (@deletion_queue.size >= (@buffer_size / 2))
       Thread.pass
+    end
+  end
+
+  def collect_garbage
+    loop do
+      @mutex.synchronize { clear_deletion_queue } if !@deletion_queue.empty? && (@deletion_queue.size >= (@buffer_size / 2))
+      sleep
     end
   end
 
@@ -263,6 +269,7 @@ class SuperQueue
 
   def fill_out_buffer_from_sqs_queue
     return false if sqs_length == 0
+    @gc.wakeup if @gc.stop? # This is the best time to do GC, because there are no pops happening.
     nil_count = 0
     while (@out_buffer.size < @buffer_size) && (nil_count < 5) # If you get nil 5 times in a row, SQS is probably empty
       m = get_message_from_queue
