@@ -1,3 +1,4 @@
+aws.yml
 *.gem
 Gemfile.lock
 .rvmrc

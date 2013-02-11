@@ -3,10 +3,10 @@ require 'spec_helper'
 describe SuperQueue do
 
   before :each do
-    SuperQueue.mock!
+    config = YAML.load(File.read('spec/aws.yml'))   
     @defaults = {
-      :aws_access_key_id => "abc123",
-      :aws_secret_access_key => "123abc",
+      :aws_access_key_id => config["access_key_id"],
+      :aws_secret_access_key => config["secret_access_key"],
     }
   end
 
