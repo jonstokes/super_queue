@@ -9,10 +9,8 @@ class SuperQueue
   def initialize(opts)
     AWS.eager_autoload! # for thread safety
     check_opts(opts)
-    opts[:localize_queue] = true unless opts.has_key? :localized_queue
     @should_poll_sqs = opts[:should_poll_sqs]
     @buffer_size = opts[:buffer_size] || 100
-    @localize_queue = opts[:localize_queue]
     @queue_name = generate_queue_name(opts)
     @request_count = 0
     initialize_sqs(opts)
@@ -118,10 +116,6 @@ class SuperQueue
     queue_name
   end
 
-  def localized?
-    !!@localize_queue
-  end
-
   private
 
   #
@@ -188,26 +182,36 @@ class SuperQueue
     raise "Couldn't create queue #{queue_name}, or delete existing queue by this name." if q_url.nil?
   end
 
-  def send_message_to_queue
-    p = @in_buffer.shift
-    payload = is_a_link?(p) ? p : encode(p)
-    retries = 0
-    begin
+  def send_messages_to_queue
+    number_of_batches = @in_buffer.size / 10
+    number_of_batches += 1 if @in_buffer.size % 10
+    batches = []
+    number_of_batches.times do
+      batch = []
+      10.times do
+        p = @in_buffer.shift
+        batch << is_a_link?(p) ? p : encode(p)
+      end
+      batches << batch
+    end
+    batches.each do |b|
       @request_count += 1
-      @sqs_queue.send_message(payload)
-    rescue Exception => e
-      sleep 0.5
-      retries += 1
-      (retries >= 10) ? retry : raise(e)
+      @sqs_queue.batch_send(b)
     end
   end
 
-  def get_message_from_queue
-    message = @sqs_queue.receive_message(q_url)
-    return nil if  message.body.nil? || message.body['Message'].first.nil?
-    @request_count += 1
-    return {:handle => message, :payload => m.body} if is_a_link?(m.body)
-    { :message => message, :payload => decode(m.body) }
+  def get_messages_from_queue(number_of_messages_to_receive)
+    messages = []
+    number_of_batches = number_of_messages_to_receive / 10
+    number_of_batches += 1 if number_of_messages_to_receive % 10
+    number_of_batches.times do
+      m = @sqs_queue.receive_messages(:limit => 10)
+      m.each do
+        messages << is_a_link?(m.body) ? {:handle => message, :payload => m.body} : { :message => message, :payload => decode(m.body) }
+      end
+      @request_count += 1
+    end
+    messages
   end
 
   def sqs_length
@@ -233,15 +237,9 @@ class SuperQueue
   def fill_out_buffer_from_sqs_queue
     return false if sqs_length == 0
     @gc.wakeup if @gc.stop? # This is the best time to do GC, because there are no pops happening.
-    nil_count = 0
-    while (@out_buffer.size < @buffer_size) && (nil_count < 5) # If you get nil 5 times in a row, SQS is probably empty
-      m = get_message_from_queue
-      if m.nil?
-        nil_count += 1
-      else
-        @out_buffer.push m
-        nil_count = 0
-      end
+    while (@out_buffer.size < @buffer_size)
+      messages = get_messages_from_queue(@buffer_size - @out_buffer.size)
+      messages.each { |m| @out_buffer.push m }
     end
     !@out_buffer.empty?
   end
@@ -262,7 +260,7 @@ class SuperQueue
 
   def clear_in_buffer
     while !@in_buffer.empty? do
-      send_message_to_queue
+      send_messages_to_queue
     end
   end
 
@@ -304,15 +302,7 @@ class SuperQueue
 
   def generate_queue_name(opts)
     q_name = opts[:name] || random_name
-    if opts[:namespace] && opts[:localize_queue]
-      "#{@namespace}-#{Digest::MD5.hexdigest(local_ip)}-#{q_name}"
-    elsif opts[:namespace]
-      "#{@namespace}-#{q_name}"
-    elsif opts[:localize_queue]
-      "#{Digest::MD5.hexdigest(local_ip)}-#{q_name}"
-    else
-      q_name
-    end
+    return opts[:namespace] ? "#{@namespace}-#{q_name}" : q_name
   end
 
   #
@@ -331,10 +321,6 @@ class SuperQueue
 
   def queue_name
     @queue_name
-  end
-
-  def local_ip
-    "127.0.0.1"
   end
 
   #
