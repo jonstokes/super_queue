@@ -52,9 +52,7 @@ class SuperQueue
     @mutex.synchronize {
       while true
         if @out_buffer.empty?
-          if fill_out_buffer_from_sqs_queue
-            return pop_out_buffer
-          elsif fill_out_buffer_from_in_buffer
+          if fill_out_buffer_from_sqs_queue || fill_out_buffer_from_in_buffer
             return pop_out_buffer
           else
             raise ThreadError, "queue empty" if non_block
@@ -99,7 +97,6 @@ class SuperQueue
 
   def destroy
     @sqs_tracker.terminate
-    #@sqs_tail_tracker.terminate
     @gc.terminate
     delete_queue
   end
