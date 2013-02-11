@@ -164,7 +164,6 @@ class SuperQueue
       @sqs_queue = new_sqs_queue(opts)
       check_for_queue_creation_success
     rescue RuntimeError => e
-      sleep 0.5
       retries += 1
       (retries >= 10) ? retry : raise(e)
     end
@@ -191,9 +190,15 @@ class SuperQueue
   def send_message_to_queue
     p = @in_buffer.shift
     payload = is_a_link?(p) ? p : encode(p)
-    @sqs.send_message(q_url, payload)
+    retries = 0
+    begin
+      @request_count += 1
+      @sqs.send_message(q_url, payload)
+    rescue Excon::Errors::BadRequest => e
+      retries += 1
+      (retries >= 10) ? retry : raise(e)
+    end
     @mock_length += 1 if SuperQueue.mocking?
-    @request_count += 1
   end
 
   def get_message_from_queue
