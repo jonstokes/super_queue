@@ -2,6 +2,7 @@ require 'fog'
 require 'base64'
 require 'socket'
 require 'digest/md5'
+require 'zlib'
 
 class SuperQueue
 
@@ -30,6 +31,8 @@ class SuperQueue
     @out_buffer = []
     @deletion_queue = []
     @mock_length = 0 if SuperQueue.mocking?
+    @compressor = Zlib::Deflate.new
+    @decompressor = Zlib::Inflate.new
 
     @sqs_tracker = Thread.new { poll_sqs }
     @gc = Thread.new { collect_garbage }
@@ -190,7 +193,7 @@ class SuperQueue
 
   def send_message_to_queue
     p = @in_buffer.shift
-    payload = is_a_link?(p) ? p : Base64.encode64(Marshal.dump(p))
+    payload = is_a_link?(p) ? p : encode(p)
     @sqs.send_message(q_url, payload)
     @mock_length += 1 if SuperQueue.mocking?
   end
@@ -203,7 +206,28 @@ class SuperQueue
     return nil if ser_obj.nil? || ser_obj.empty?
     @mock_length -= 1 if SuperQueue.mocking?
     return {:handle => handle, :payload => ser_obj} if is_a_link?(ser_obj)
-    { :handle => handle, :payload => Marshal.load(Base64.decode64(ser_obj)) }
+    { :handle => handle, :payload => decode(ser_obj) }
+  end
+
+  def encode(p)
+    text = Base64.encode64(Marshal.dump(p))
+    retval = nil
+    retries = 0
+    begin
+      retval = @compressor.deflate(text)
+      retries += 1
+    end until !(retval.nil? || retval.empty?) || (retries > 5)
+    retval
+  end
+
+  def decode(ser_obj)
+    text = nil
+    retries = 0
+    begin
+      text = @decompressor.inflate(ser_obj)
+      retries += 1
+    end until !(text.nil? || text.empty?) || (retries > 5)
+    Marshal.load(Base64.decode64(text))
   end
 
   def q_url
