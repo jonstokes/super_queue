@@ -17,8 +17,7 @@ class SuperQueue
   def initialize(opts)
     check_opts(opts)
     opts[:localize_queue] = true unless opts.has_key? :localized_queue
-
-    @buffer_size = 100 unless opts.has_key? :buffer_size
+    @buffer_size = opts[:buffer_size] || 100
     @localize_queue = opts[:localize_queue]
     @queue_name = generate_queue_name(opts)
     initialize_sqs(opts)
