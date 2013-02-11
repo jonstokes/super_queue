@@ -126,29 +126,9 @@ class SuperQueue
 
   private
 
-  def poll_sqs
-    loop do
-      @mutex.synchronize { fill_out_buffer_from_sqs_queue || fill_out_buffer_from_in_buffer } if @out_buffer.empty?
-      @mutex.synchronize { clear_in_buffer } if !@in_buffer.empty? && (@in_buffer.size > @buffer_size)
-      Thread.pass
-    end
-  end
-
-  def collect_garbage
-    loop do
-      #This also needs a condition to clear the del queue if there are any handles where the invisibility is about to expire
-      @mutex.synchronize { clear_deletion_queue } if !@deletion_queue.empty? && (@deletion_queue.size >= (@buffer_size / 2))
-      sleep
-    end
-  end
-
-  def check_opts(opts)
-    raise "Options can't be nil!" if opts.nil?
-    raise "Minimun :buffer_size is 5." if opts[:buffer_size] && (opts[:buffer_size] < 5)
-    raise "AWS credentials :aws_access_key_id and :aws_secret_access_key required!" unless opts[:aws_access_key_id] && opts[:aws_secret_access_key]
-    raise "Visbility timeout must be an integer (in seconds)!" if opts[:visibility_timeout] && !opts[:visibility_timeout].is_a?(Integer)
-  end
-
+  #
+  # Amazon SQS methods
+  #
   def initialize_sqs(opts)
     create_sqs_connection(opts)
     create_sqs_queue(opts)
@@ -209,86 +189,19 @@ class SuperQueue
     { :handle => handle, :payload => decode(ser_obj) }
   end
 
-  def encode(p)
-    text = Base64.encode64(Marshal.dump(p))
-    retval = nil
-    retries = 0
-    begin
-      retval = @compressor.deflate(text)
-      retries += 1
-    end until !(retval.nil? || retval.empty?) || (retries > 5)
-    retval
-  end
-
-  def decode(ser_obj)
-    text = nil
-    retries = 0
-    begin
-      text = @decompressor.inflate(ser_obj)
-      retries += 1
-    end until !(text.nil? || text.empty?) || (retries > 5)
-    Marshal.load(Base64.decode64(text))
-  end
-
-  def q_url
-    return @q_url if @q_url
-    @q_url = @sqs_queue.body['QueueUrl']
-    @q_url
-  end
-
-  def is_a_link?(s)
-    return false unless s.is_a? String
-    (s[0..6] == "http://") || (s[0..7] == "https://")
-  end
-
   def delete_queue
     @sqs.delete_queue(q_url)
   end
 
-  def generate_queue_name(opts)
-    q_name = opts[:name] || random_name
-    if opts[:namespace] && opts[:localize_queue]
-      "#{@namespace}-#{Digest::MD5.hexdigest(local_ip)}-#{q_name}"
-    elsif opts[:namespace]
-      "#{@namespace}-#{q_name}"
-    elsif opts[:localize_queue]
-      "#{Digest::MD5.hexdigest(local_ip)}-#{q_name}"
-    else
-      q_name
+  def clear_deletion_queue
+    while !@deletion_queue.empty?
+      @sqs.delete_message(q_url, @deletion_queue.shift)
     end
   end
 
-  def random_name
-    o =  [('a'..'z'),('A'..'Z')].map{|i| i.to_a}.flatten
-    (0...15).map{ o[rand(o.length)] }.join
-  end
-
-  def sqs_length
-    return @mock_length if SuperQueue.mocking?
-    body = @sqs.get_queue_attributes(q_url, "ApproximateNumberOfMessages").body
-    begin
-      retval = 0
-      if body
-        attrs = body["Attributes"]
-        if attrs
-          retval = attrs["ApproximateNumberOfMessages"]
-        end
-      end
-    end until !retval.nil?
-    retval
-  end
-
-  def local_ip
-    orig, Socket.do_not_reverse_lookup = Socket.do_not_reverse_lookup, true  # turn off reverse DNS resolution temporarily
-    return "127.0.0.1" if SuperQueue.mocking?
-    UDPSocket.open do |s|
-      s.connect '64.233.187 .99', 1
-      s.addr.last
-    end
-  ensure
-    Socket.do_not_reverse_lookup = orig
-  end
-
+  #
+  # Buffer-related methods
+  #
   def fill_out_buffer_from_sqs_queue
     return false if sqs_length == 0
     @gc.wakeup if @gc.stop? # This is the best time to do GC, because there are no pops happening.
@@ -319,20 +232,121 @@ class SuperQueue
     m[:payload]
   end
 
-  def queue_name
-    @queue_name
-  end
-
   def clear_in_buffer
     while !@in_buffer.empty? do
       send_message_to_queue
     end
   end
 
-  def clear_deletion_queue
-    while !@deletion_queue.empty?
-      @sqs.delete_message(q_url, @deletion_queue.shift)
+  def check_opts(opts)
+    raise "Options can't be nil!" if opts.nil?
+    raise "Minimun :buffer_size is 5." if opts[:buffer_size] && (opts[:buffer_size] < 5)
+    raise "AWS credentials :aws_access_key_id and :aws_secret_access_key required!" unless opts[:aws_access_key_id] && opts[:aws_secret_access_key]
+    raise "Visbility timeout must be an integer (in seconds)!" if opts[:visibility_timeout] && !opts[:visibility_timeout].is_a?(Integer)
+  end
+
+  #
+  # Misc helper methods
+  #
+  def encode(p)
+    text = Base64.encode64(Marshal.dump(p))
+    retval = nil
+    retries = 0
+    begin
+      retval = @compressor.deflate(text)
+      retries += 1
+    end until !(retval.nil? || retval.empty?) || (retries > 5)
+    retval
+  end
+
+  def decode(ser_obj)
+    text = nil
+    retries = 0
+    begin
+      text = @decompressor.inflate(ser_obj)
+      retries += 1
+    end until !(text.nil? || text.empty?) || (retries > 5)
+    Marshal.load(Base64.decode64(text))
+  end
+
+  def is_a_link?(s)
+    return false unless s.is_a? String
+    (s[0..6] == "http://") || (s[0..7] == "https://")
+  end
+
+  def generate_queue_name(opts)
+    q_name = opts[:name] || random_name
+    if opts[:namespace] && opts[:localize_queue]
+      "#{@namespace}-#{Digest::MD5.hexdigest(local_ip)}-#{q_name}"
+    elsif opts[:namespace]
+      "#{@namespace}-#{q_name}"
+    elsif opts[:localize_queue]
+      "#{Digest::MD5.hexdigest(local_ip)}-#{q_name}"
+    else
+      q_name
     end
   end
 
+  #
+  # Virtul attributes and convenience methods
+  #
+  def q_url
+    return @q_url if @q_url
+    @q_url = @sqs_queue.body['QueueUrl']
+    @q_url
+  end
+
+  def random_name
+    o =  [('a'..'z'),('A'..'Z')].map{|i| i.to_a}.flatten
+    (0...15).map{ o[rand(o.length)] }.join
+  end
+
+  def sqs_length
+    return @mock_length if SuperQueue.mocking?
+    body = @sqs.get_queue_attributes(q_url, "ApproximateNumberOfMessages").body
+    begin
+      retval = 0
+      if body
+        attrs = body["Attributes"]
+        if attrs
+          retval = attrs["ApproximateNumberOfMessages"]
+        end
+      end
+    end until !retval.nil?
+    retval
+  end
+
+  def queue_name
+    @queue_name
+  end
+
+  def local_ip
+    orig, Socket.do_not_reverse_lookup = Socket.do_not_reverse_lookup, true  # turn off reverse DNS resolution temporarily
+    return "127.0.0.1" if SuperQueue.mocking?
+    UDPSocket.open do |s|
+      s.connect '64.233.187 .99', 1
+      s.addr.last
+    end
+  ensure
+    Socket.do_not_reverse_lookup = orig
+  end
+
+  #
+  # Maintence thread-related methods
+  #
+  def poll_sqs
+    loop do
+      @mutex.synchronize { fill_out_buffer_from_sqs_queue || fill_out_buffer_from_in_buffer } if @out_buffer.empty?
+      @mutex.synchronize { clear_in_buffer } if !@in_buffer.empty? && (@in_buffer.size > @buffer_size)
+      Thread.pass
+    end
+  end
+
+  def collect_garbage
+    loop do
+      #This also needs a condition to clear the del queue if there are any handles where the invisibility is about to expire
+      @mutex.synchronize { clear_deletion_queue } if !@deletion_queue.empty? && (@deletion_queue.size >= (@buffer_size / 2))
+      sleep
+    end
+  end
 end
