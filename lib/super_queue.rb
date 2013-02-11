@@ -128,6 +128,32 @@ class SuperQueue
 
   private
 
+  def poll_sqs_head
+    loop do
+      while !@in_buffer.empty? do
+        @mutex.synchronize { send_message_to_queue unless @in_buffer.empty? }
+      end
+      sleep 1
+    end
+  end
+
+  def poll_sqs_tail
+    loop do
+      @mutex.synchronize { fill_out_buffer_from_sqs_queue } if @out_buffer.empty?
+      sleep 1
+    end
+  end
+
+  def collect_garbage
+    loop do
+      while !@deletion_queue.empty? do
+        @mutex.synchronize { @sqs.delete_message(q_url, @deletion_queue.shift) unless @deletion_queue.empty? }
+      end
+      sleep 1
+    end
+  end
+
+
   def check_opts(opts)
     raise "Options can't be nil!" if opts.nil?
     raise "Minimun :buffer_size is 5." if opts[:buffer_size] && (opts[:buffer_size] < 5)
@@ -252,28 +278,6 @@ class SuperQueue
     end
   ensure
     Socket.do_not_reverse_lookup = orig
-  end
-
-  def poll_sqs_head
-    loop do
-      while !@in_buffer.empty? do
-        @mutex.synchronize { send_message_to_queue unless @in_buffer.empty? }
-      end
-    end
-  end
-
-  def poll_sqs_tail
-    loop do
-      @mutex.synchronize { fill_out_buffer_from_sqs_queue } if @out_buffer.empty?
-    end
-  end
-
-  def collect_garbage
-    loop do
-      while !@deletion_queue.empty? do
-        @mutex.synchronize { @sqs.delete_message(q_url, @deletion_queue.shift) unless @deletion_queue.empty? }
-      end
-    end
   end
 
   def fill_out_buffer_from_sqs_queue
