@@ -139,6 +139,15 @@ the following additional methods that reflect its SQS back end:
 ### #url
 Returns the URL to the actual SQS queue.
 
+### #sqs_requests
+Returns the number of requests that have been sent to SQS. This number
+is useful for keeping track of costs. 
+
+Note that this number will sometimes be
+less than the number of push and pop calls you've made to SuperQueue, because in some cases
+SuperQueue will bypass SQS and move objects directly between buffers in order to
+optimize cost. 
+
 ### #localized?
 Returns whether it's localized or not.
 

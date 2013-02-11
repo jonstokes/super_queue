@@ -21,6 +21,7 @@ class SuperQueue
     @buffer_size = opts[:buffer_size] || 100
     @localize_queue = opts[:localize_queue]
     @queue_name = generate_queue_name(opts)
+    @request_count = 0
     initialize_sqs(opts)
 
     @waiting = []
@@ -31,6 +32,7 @@ class SuperQueue
     @out_buffer = []
     @deletion_queue = []
     @mock_length = 0 if SuperQueue.mocking?
+
     @compressor = Zlib::Deflate.new
     @decompressor = Zlib::Inflate.new
 
@@ -104,6 +106,10 @@ class SuperQueue
     delete_queue
   end
 
+  def sqs_requests
+    @request_count
+  end
+
   alias enq push
   alias << push
 
@@ -134,6 +140,7 @@ class SuperQueue
     create_sqs_queue(opts)
     check_for_queue_creation_success
     @sqs.set_queue_attributes(q_url, "VisibilityTimeout", opts[:visibility_timeout]) if opts[:visibility_timeout]
+    @request_count += 1
   end
 
   def create_sqs_connection(opts)
@@ -160,6 +167,7 @@ class SuperQueue
         @sqs_queue = @sqs.create_queue(queue_name)
       end
     end
+    @request_count += 1
   end
 
   def check_for_queue_creation_success
@@ -176,6 +184,7 @@ class SuperQueue
     payload = is_a_link?(p) ? p : encode(p)
     @sqs.send_message(q_url, payload)
     @mock_length += 1 if SuperQueue.mocking?
+    @request_count += 1
   end
 
   def get_message_from_queue
@@ -185,17 +194,36 @@ class SuperQueue
     ser_obj = message.body['Message'].first['Body']
     return nil if ser_obj.nil? || ser_obj.empty?
     @mock_length -= 1 if SuperQueue.mocking?
+    @request_count += 1
     return {:handle => handle, :payload => ser_obj} if is_a_link?(ser_obj)
     { :handle => handle, :payload => decode(ser_obj) }
   end
 
+  def sqs_length
+    return @mock_length if SuperQueue.mocking?
+    body = @sqs.get_queue_attributes(q_url, "ApproximateNumberOfMessages").body
+    @request_count += 1
+    begin
+      retval = 0
+      if body
+        attrs = body["Attributes"]
+        if attrs
+          retval = attrs["ApproximateNumberOfMessages"]
+        end
+      end
+    end until !retval.nil?
+    retval
+  end
+
   def delete_queue
+    @request_count += 1
     @sqs.delete_queue(q_url)
   end
 
   def clear_deletion_queue
     while !@deletion_queue.empty?
       @sqs.delete_message(q_url, @deletion_queue.shift)
+      @request_count += 1
     end
   end
 
@@ -299,21 +327,6 @@ class SuperQueue
   def random_name
     o =  [('a'..'z'),('A'..'Z')].map{|i| i.to_a}.flatten
     (0...15).map{ o[rand(o.length)] }.join
-  end
-
-  def sqs_length
-    return @mock_length if SuperQueue.mocking?
-    body = @sqs.get_queue_attributes(q_url, "ApproximateNumberOfMessages").body
-    begin
-      retval = 0
-      if body
-        attrs = body["Attributes"]
-        if attrs
-          retval = attrs["ApproximateNumberOfMessages"]
-        end
-      end
-    end until !retval.nil?
-    retval
   end
 
   def queue_name

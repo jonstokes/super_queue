@@ -143,4 +143,15 @@ describe SuperQueue do
       expect { queue.destroy }.not_to raise_error
     end
   end
+
+  describe "#sqs_requests" do
+    it "should keep track of the number of SQS requests" do
+      queue = SuperQueue.new(@defaults)
+      queue << "foo"
+      queue << "bar"
+      queue.pop
+      queue.length
+      queue.sqs_requests.should > 1
+    end
+  end
 end
