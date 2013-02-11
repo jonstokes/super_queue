@@ -18,6 +18,7 @@ class SuperQueue
   def initialize(opts)
     check_opts(opts)
     opts[:localize_queue] = true unless opts.has_key? :localized_queue
+    @should_poll_sqs = opts[:should_poll_sqs]
     @buffer_size = opts[:buffer_size] || 100
     @localize_queue = opts[:localize_queue]
     @queue_name = generate_queue_name(opts)
@@ -36,7 +37,7 @@ class SuperQueue
     @compressor = Zlib::Deflate.new
     @decompressor = Zlib::Inflate.new
 
-    @sqs_tracker = Thread.new { poll_sqs }
+    @sqs_tracker = Thread.new { poll_sqs } if @should_poll_sqs
     @gc = Thread.new { collect_garbage }
   end
 
@@ -94,14 +95,14 @@ class SuperQueue
   end
 
   def shutdown
-    @sqs_tracker.terminate
+    @sqs_tracker.terminate if @should_poll_sqs
     @mutex.synchronize { clear_in_buffer }
     @gc.terminate
     @mutex.synchronize { clear_deletion_queue }
   end
 
   def destroy
-    @sqs_tracker.terminate
+    @sqs_tracker.terminate if @should_poll_sqs
     @gc.terminate
     delete_queue
   end
