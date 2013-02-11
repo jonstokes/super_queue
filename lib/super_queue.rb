@@ -133,6 +133,7 @@ class SuperQueue
 
   def collect_garbage
     loop do
+      #This also needs a condition to clear the del queue if there are any handles where the invisibility is about to expire
       @mutex.synchronize { clear_deletion_queue } if !@deletion_queue.empty? && (@deletion_queue.size >= (@buffer_size / 2))
       sleep
     end
