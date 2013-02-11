@@ -17,8 +17,8 @@ class SuperQueue
   def initialize(opts)
     check_opts(opts)
     opts[:localize_queue] = true unless opts.has_key? :localized_queue
-    opts[:buffer_size] = 100 unless opts.has_key? :buffer_size
 
+    @buffer_size = 100 unless opts.has_key? :buffer_size
     @localize_queue = opts[:localize_queue]
     @queue_name = generate_queue_name(opts)
     initialize_sqs(opts)
@@ -27,9 +27,9 @@ class SuperQueue
     @waiting.taint
     self.taint
     @mutex = Mutex.new
-    @in_buffer = SizedQueue.new(opts[:buffer_size])
-    @out_buffer = SizedQueue.new(opts[:buffer_size])
-    @deletion_queue = Queue.new
+    @in_buffer = []
+    @out_buffer = []
+    @deletion_queue = []
     @mock_length = 0 if SuperQueue.mocking?
 
     @sqs_head_tracker = Thread.new { poll_sqs_head }
@@ -53,15 +53,17 @@ class SuperQueue
     @mutex.synchronize {
       while true
         if @out_buffer.empty?
-          if fill_out_buffer_from_sqs_queue || fill_out_buffer_from_in_buffer
-            return pop_out_buffer(non_block)
+          if fill_out_buffer_from_sqs_queue
+            return pop_out_buffer
+          elsif fill_out_buffer_from_in_buffer
+            return pop_out_buffer
           else
             raise ThreadError, "queue empty" if non_block
             @waiting.push Thread.current
             @mutex.sleep
           end
         else
-          return pop_out_buffer(non_block)
+          return pop_out_buffer
         end
       end
     }
@@ -91,14 +93,10 @@ class SuperQueue
 
   def shutdown
     @sqs_head_tracker.terminate
-    while !@in_buffer.empty? do
-      @sqs.delete_message(q_url, @in_buffer.pop)
-    end  
+    @mutex.synchronize { clear_in_buffer }
     @sqs_tail_tracker.terminate
     @garbage_collector.terminate
-    while !@deletion_queue.empty?
-      @sqs.delete_message(q_url, @deletion_queue.pop)
-    end
+    @mutex.synchronize { clear_deletion_queue }
   end
 
   def destroy
@@ -179,7 +177,8 @@ class SuperQueue
     raise "Couldn't create queue #{queue_name}, or delete existing queue by this name." if q_url.nil?
   end
 
-  def send_message_to_queue(p)
+  def send_message_to_queue
+    p = @in_buffer.shift
     payload = is_a_link?(p) ? p : Base64.encode64(Marshal.dump(p))
     @sqs.send_message(q_url, payload)
     @mock_length += 1 if SuperQueue.mocking?
@@ -248,7 +247,7 @@ class SuperQueue
     orig, Socket.do_not_reverse_lookup = Socket.do_not_reverse_lookup, true  # turn off reverse DNS resolution temporarily
     return "127.0.0.1" if SuperQueue.mocking?
     UDPSocket.open do |s|
-      s.connect '64.233.187.99', 1
+      s.connect '64.233.187 .99', 1
       s.addr.last
     end
   ensure
@@ -256,47 +255,52 @@ class SuperQueue
   end
 
   def poll_sqs_head
-    loop { send_message_to_queue(@in_buffer.pop) }
+    loop do
+      while !@in_buffer.empty? do
+        @mutex.synchronize { send_message_to_queue unless @in_buffer.empty? }
+      end
+    end
   end
 
   def poll_sqs_tail
     loop do
-      nil_count = 0
-      while (@out_buffer.size < @out_buffer.max) && (nil_count < 5) # If you get nil 5 times in a row, SQS is probably empty
-        m = get_message_from_queue
-        if m.nil?
-          nil_count += 1
-        else
-          @out_buffer.push m
-          nil_count = 0
-        end
-      end unless sqs_length == 0
-      sleep
+      @mutex.synchronize { fill_out_buffer_from_sqs_queue } if @out_buffer.empty?
     end
   end
 
   def collect_garbage
-    loop { @sqs.delete_message(q_url, @deletion_queue.pop) }
-  end
-
-  def fill_out_buffer_from_sqs_queue
-    @sqs_tail_tracker.wakeup if @sqs_tail_tracker.stop?
-    count = 0
-    while @out_buffer.empty? && count != 5
-      sleep 1
-      count += 1
+    loop do
+      while !@deletion_queue.empty? do
+        @mutex.synchronize { @sqs.delete_message(q_url, @deletion_queue.shift) unless @deletion_queue.empty? }
+      end
     end
   end
 
-  def fill_out_buffer_from_in_buffer
-    while (@out_buffer.size < @out_buffer.max) && !@in_buffer.empty?
-      @out_buffer.push(:payload => @in_buffer.pop)
+  def fill_out_buffer_from_sqs_queue
+    return false if sqs_length == 0
+    nil_count = 0
+    while (@out_buffer.size < @buffer_size) && (nil_count < 5) # If you get nil 5 times in a row, SQS is probably empty
+      m = get_message_from_queue
+      if m.nil?
+        nil_count += 1
+      else
+        @out_buffer.push m
+        nil_count = 0
+      end
     end
     !@out_buffer.empty?
   end
 
-  def pop_out_buffer(non_block)
-    m = @out_buffer.pop(non_block)
+  def fill_out_buffer_from_in_buffer
+    return false if @in_buffer.empty?
+    while (@out_buffer.size <= @buffer_size) && !@in_buffer.empty?
+      @out_buffer.push(:payload => @in_buffer.shift)
+    end
+    !@out_buffer.empty?
+  end
+
+  def pop_out_buffer
+    m = @out_buffer.shift
     @deletion_queue << m[:handle] if m[:handle]
     m[:payload]
   end
@@ -304,4 +308,17 @@ class SuperQueue
   def queue_name
     @queue_name
   end
+
+  def clear_in_buffer
+    while !@in_buffer.empty? do
+      send_message_to_queue
+    end
+  end
+
+  def clear_deletion_queue
+    while !@deletion_queue.empty?
+      @sqs.delete_message(q_url, @deletion_queue.shift)
+    end
+  end
+
 end
