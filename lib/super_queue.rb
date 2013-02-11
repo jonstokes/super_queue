@@ -1,4 +1,4 @@
-require 'fog'
+require 'aws-sdk'
 require 'base64'
 require 'socket'
 require 'digest/md5'
@@ -6,16 +6,8 @@ require 'zlib'
 
 class SuperQueue
 
-  def self.mock!
-    @@mock = true
-    Fog.mock!
-  end
-
-  def self.mocking?
-    defined?(@@mock) && @@mock
-  end
-
   def initialize(opts)
+    AWS.eager_autoload! # for thread safety
     check_opts(opts)
     opts[:localize_queue] = true unless opts.has_key? :localized_queue
     @should_poll_sqs = opts[:should_poll_sqs]
@@ -32,7 +24,6 @@ class SuperQueue
     @in_buffer = []
     @out_buffer = []
     @deletion_queue = []
-    @mock_length = 0 if SuperQueue.mocking?
 
     @compressor = Zlib::Deflate.new
     @decompressor = Zlib::Inflate.new
@@ -149,11 +140,11 @@ class SuperQueue
 
   def create_sqs_connection(opts)
     aws_options = {
-      :aws_access_key_id => opts[:aws_access_key_id], 
-      :aws_secret_access_key => opts[:aws_secret_access_key]
+      :access_key_id => opts[:aws_access_key_id], 
+      :secret_access_key => opts[:aws_secret_access_key]
     }
     begin
-      @sqs = Fog::AWS::SQS.new(aws_options)
+      @sqs = AWS::SQS.new(aws_options)
     rescue Exception => e
       raise e
     end
@@ -162,20 +153,29 @@ class SuperQueue
   def create_sqs_queue(opts)
     retries = 0
     begin
-      @sqs_queue = new_sqs_queue(opts)
+      @sqs_queue = find_queue_by_name || new_sqs_queue(opts)
       check_for_queue_creation_success
     rescue RuntimeError => e
       retries += 1
-      (retries >= 10) ? retry : raise(e)
+      sleep 1
+      (retries >= 20) ? retry : raise(e)
+    end
+  end
+
+  def find_queue_by_name
+    begin
+      @sqs.queues.named(queue_name)
+    rescue AWS::SQS::Errors::NonExistentQueue
+      return nil
     end
   end
 
   def new_sqs_queue(opts)
     @request_count += 1
     if opts[:visibility_timeout]
-      @sqs.create_queue(queue_name, {"DefaultVisibilityTimeout" => opts[:visibility_timeout]})
+      @sqs.queues.create(queue_name, { :visibility_timeout => opts[:visibility_timeout] })
     else
-      @sqs.create_queue(queue_name)
+      @sqs.queues.create(queue_name)
     end
   end
 
@@ -194,50 +194,35 @@ class SuperQueue
     retries = 0
     begin
       @request_count += 1
-      @sqs.send_message(q_url, payload)
-    rescue Excon::Errors::BadRequest => e
+      @sqs_queue.send_message(payload)
+    rescue Exception => e
+      sleep 0.5
       retries += 1
       (retries >= 10) ? retry : raise(e)
     end
-    @mock_length += 1 if SuperQueue.mocking?
   end
 
   def get_message_from_queue
-    message = @sqs.receive_message(q_url)
+    message = @sqs_queue.receive_message(q_url)
     return nil if  message.body.nil? || message.body['Message'].first.nil?
-    handle = message.body['Message'].first['ReceiptHandle']
-    ser_obj = message.body['Message'].first['Body']
-    return nil if ser_obj.nil? || ser_obj.empty?
-    @mock_length -= 1 if SuperQueue.mocking?
     @request_count += 1
-    return {:handle => handle, :payload => ser_obj} if is_a_link?(ser_obj)
-    { :handle => handle, :payload => decode(ser_obj) }
+    return {:handle => message, :payload => m.body} if is_a_link?(m.body)
+    { :message => message, :payload => decode(m.body) }
   end
 
   def sqs_length
-    return @mock_length if SuperQueue.mocking?
-    body = @sqs.get_queue_attributes(q_url, "ApproximateNumberOfMessages").body
-    @request_count += 1
-    begin
-      retval = 0
-      if body
-        attrs = body["Attributes"]
-        if attrs
-          retval = attrs["ApproximateNumberOfMessages"]
-        end
-      end
-    end until !retval.nil?
-    retval
+    n = @sqs_queue.approximate_number_of_messages
+    return n.is_a?(Integer) ? n : 0
   end
 
   def delete_queue
     @request_count += 1
-    @sqs.delete_queue(q_url)
+    @sqs_queue.delete
   end
 
   def clear_deletion_queue
     while !@deletion_queue.empty?
-      @sqs.delete_message(q_url, @deletion_queue.shift)
+      @sqs_queue.batch_delete(@deletion_queue[0..9])
       @request_count += 1
     end
   end
@@ -271,7 +256,7 @@ class SuperQueue
 
   def pop_out_buffer
     m = @out_buffer.shift
-    @deletion_queue << m[:handle] if m[:handle]
+    @deletion_queue << m[:message] if m[:message]
     m[:payload]
   end
 
@@ -292,7 +277,7 @@ class SuperQueue
   # Misc helper methods
   #
   def encode(p)
-    text = Base64.encode64(Marshal.dump(p))
+    text = Base64.urlsafe_encode64(Marshal.dump(p))
     retval = nil
     retries = 0
     begin
@@ -309,7 +294,7 @@ class SuperQueue
       text = @decompressor.inflate(ser_obj)
       retries += 1
     end until !(text.nil? || text.empty?) || (retries > 5)
-    Marshal.load(Base64.decode64(text))
+    Marshal.load(Base64.urlsafe_decode64(text))
   end
 
   def is_a_link?(s)
@@ -335,7 +320,7 @@ class SuperQueue
   #
   def q_url
     return @q_url if @q_url
-    @q_url = @sqs_queue.body['QueueUrl']
+    @q_url = @sqs_queue.url
     @q_url
   end
 
@@ -350,7 +335,6 @@ class SuperQueue
 
   def local_ip
     orig, Socket.do_not_reverse_lookup = Socket.do_not_reverse_lookup, true  # turn off reverse DNS resolution temporarily
-    return "127.0.0.1" if SuperQueue.mocking?
     UDPSocket.open do |s|
       s.connect '64.233.187 .99', 1
       s.addr.last
