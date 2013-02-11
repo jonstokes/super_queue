@@ -32,7 +32,7 @@ class SuperQueue
     @mock_length = 0 if SuperQueue.mocking?
 
     @sqs_tracker = Thread.new { poll_sqs }
-    @garbage_collector = Thread.new { collect_garbage }
+    #@garbage_collector = Thread.new { collect_garbage }
   end
 
   def push(p)
@@ -93,14 +93,14 @@ class SuperQueue
   def shutdown
     @sqs_tracker.terminate
     @mutex.synchronize { clear_in_buffer }
-    @garbage_collector.terminate
+    #@garbage_collector.terminate
     @mutex.synchronize { clear_deletion_queue }
   end
 
   def destroy
-    #@sqs_head_tracker.terminate
+    @sqs_tracker.terminate
     #@sqs_tail_tracker.terminate
-    @garbage_collector.terminate
+    #@garbage_collector.terminate
     delete_queue
   end
 
@@ -128,20 +128,11 @@ class SuperQueue
 
   def poll_sqs
     loop do
-      @mutex.synchronize { clear_in_buffer } if @in_buffer.size > 0
+      @mutex.synchronize { clear_in_buffer } if !@in_buffer.empty? && (@in_buffer.size > @buffer_size)
       @mutex.synchronize { fill_out_buffer_from_sqs_queue } if @out_buffer.empty?
+      @mutex.synchronize { clear_deletion_queue } if !@deletion_queue.empty? && (@deletion_queue.size >= (@buffer_size / 2))
     end
   end
-
-  def collect_garbage
-    loop do
-      if !@deletion_queue.empty? && (@deletion_queue.size >= (@buffer_size / 2))
-        @mutex.synchronize { clear_deletion_queue }
-      end
-      sleep 1
-    end
-  end
-
 
   def check_opts(opts)
     raise "Options can't be nil!" if opts.nil?
