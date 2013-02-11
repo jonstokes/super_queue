@@ -91,9 +91,8 @@ class SuperQueue
   end
 
   def shutdown
-    #@sqs_head_tracker.terminate
+    @sqs_tracker.terminate
     @mutex.synchronize { clear_in_buffer }
-    #@sqs_tail_tracker.terminate
     @garbage_collector.terminate
     @mutex.synchronize { clear_deletion_queue }
   end
@@ -131,7 +130,6 @@ class SuperQueue
     loop do
       @mutex.synchronize { clear_in_buffer } if @in_buffer.size > 0
       @mutex.synchronize { fill_out_buffer_from_sqs_queue } if @out_buffer.empty?
-      sleep 1
     end
   end
 
@@ -140,7 +138,6 @@ class SuperQueue
       while !@deletion_queue.empty? do
         @mutex.synchronize { @sqs.delete_message(q_url, @deletion_queue.shift) unless @deletion_queue.empty? }
       end
-      sleep 1
     end
   end
 
