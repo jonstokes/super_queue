@@ -33,7 +33,7 @@ class SuperQueue
     @mock_length = 0 if SuperQueue.mocking?
 
     @sqs_head_tracker = Thread.new { poll_sqs_head }
-    @sqs_tail_tracker = Thread.new { poll_sqs_tail }
+    #@sqs_tail_tracker = Thread.new { poll_sqs_tail }
     @garbage_collector = Thread.new { collect_garbage }
   end
 
