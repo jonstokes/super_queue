@@ -135,12 +135,8 @@ class SuperQueue
 
   def collect_garbage
     loop do
-      if !@deletion_queue.empty?
-        @mutex.synchronize {
-          while !@deletion_queue.empty? do
-            @sqs.delete_message(q_url, @deletion_queue.shift)
-          end
-        }
+      if !@deletion_queue.empty? && (@deletion_queue.size >= (@buffer_size / 2))
+        @mutex.synchronize { clear_deletion_queue }
       end
       sleep 1
     end
