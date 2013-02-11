@@ -32,7 +32,7 @@ class SuperQueue
     @deletion_queue = []
     @mock_length = 0 if SuperQueue.mocking?
 
-    @sqs_head_tracker = Thread.new { poll_sqs_head }
+    #@sqs_head_tracker = Thread.new { poll_sqs_head }
     #@sqs_tail_tracker = Thread.new { poll_sqs_tail }
     @garbage_collector = Thread.new { collect_garbage }
   end
@@ -40,6 +40,7 @@ class SuperQueue
   def push(p)
     @mutex.synchronize {
       @in_buffer.push p
+      clear_in_buffer if @in_buffer.size >= @buffer_size
       begin
         t = @waiting.shift
         t.wakeup if t
@@ -92,16 +93,16 @@ class SuperQueue
   end
 
   def shutdown
-    @sqs_head_tracker.terminate
+    #@sqs_head_tracker.terminate
     @mutex.synchronize { clear_in_buffer }
-    @sqs_tail_tracker.terminate
+    #@sqs_tail_tracker.terminate
     @garbage_collector.terminate
     @mutex.synchronize { clear_deletion_queue }
   end
 
   def destroy
-    @sqs_head_tracker.terminate
-    @sqs_tail_tracker.terminate
+    #@sqs_head_tracker.terminate
+    #@sqs_tail_tracker.terminate
     @garbage_collector.terminate
     delete_queue
   end
