@@ -31,8 +31,7 @@ class SuperQueue
     @deletion_queue = []
     @mock_length = 0 if SuperQueue.mocking?
 
-    #@sqs_head_tracker = Thread.new { poll_sqs_head }
-    #@sqs_tail_tracker = Thread.new { poll_sqs_tail }
+    @sqs_tracker = Thread.new { poll_sqs }
     @garbage_collector = Thread.new { collect_garbage }
   end
 
@@ -128,17 +127,9 @@ class SuperQueue
 
   private
 
-  def poll_sqs_head
+  def poll_sqs
     loop do
-      while !@in_buffer.empty? do
-        @mutex.synchronize { send_message_to_queue unless @in_buffer.empty? }
-      end
-      sleep 1
-    end
-  end
-
-  def poll_sqs_tail
-    loop do
+      @mutex.synchronize { clear_in_buffer } if @in_buffer.size > 0
       @mutex.synchronize { fill_out_buffer_from_sqs_queue } if @out_buffer.empty?
       sleep 1
     end
