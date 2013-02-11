@@ -138,6 +138,7 @@ class SuperQueue
       while !@deletion_queue.empty? do
         @mutex.synchronize { @sqs.delete_message(q_url, @deletion_queue.shift) unless @deletion_queue.empty? }
       end
+      sleep 1
     end
   end
 
