@@ -9,5 +9,5 @@ Gem::Specification.new do |s|
   s.files       = ["lib/super_queue.rb"]
   s.homepage    = 'https://github.com/jonstokes/super_queue'
 
-  s.add_dependency('fog', '~>1.9.0')
+  s.add_dependency('aws-sdk', '~>1.6.5')
 end
