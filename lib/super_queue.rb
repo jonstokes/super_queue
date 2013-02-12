@@ -190,10 +190,13 @@ class SuperQueue
       batch = []
       10.times do
         p = @in_buffer.shift
-        batch << is_a_link?(p) ? p : encode(p)
+        obj = is_a_link?(p) ? p : encode(p)
+        batch << obj
       end
       batches << batch
     end
+
+    #Ugliness! But I'm not sure how else to tackle this at the moment
     batches.each do |b|
       @request_count += 1
       @sqs_queue.batch_send(b)
@@ -204,10 +207,15 @@ class SuperQueue
     messages = []
     number_of_batches = number_of_messages_to_receive / 10
     number_of_batches += 1 if number_of_messages_to_receive % 10
-    number_of_batches.times do
-      m = @sqs_queue.receive_messages(:limit => 10)
-      m.each do
-        messages << is_a_link?(m.body) ? {:handle => message, :payload => m.body} : { :message => message, :payload => decode(m.body) }
+    number_of_batches.times do |c|
+      batch = @sqs_queue.receive_messages(:limit => 10)
+      batch.each do |m|
+        if is_a_link?(m.body)
+          obj = {:message => m, :payload => m.body}
+        else
+          obj = { :message => m, :payload => decode(m.body) }
+        end
+        messages << obj
       end
       @request_count += 1
     end
@@ -275,24 +283,16 @@ class SuperQueue
   # Misc helper methods
   #
   def encode(p)
-    text = Base64.urlsafe_encode64(Marshal.dump(p))
-    retval = nil
-    retries = 0
-    begin
-      retval = @compressor.deflate(text)
-      retries += 1
-    end until !(retval.nil? || retval.empty?) || (retries > 5)
-    retval
+    Base64.urlsafe_encode64(Marshal.dump(p))
   end
 
   def decode(ser_obj)
-    text = nil
-    retries = 0
-    begin
-      text = @decompressor.inflate(ser_obj)
-      retries += 1
-    end until !(text.nil? || text.empty?) || (retries > 5)
-    Marshal.load(Base64.urlsafe_decode64(text))
+    #puts "Decode: Decoding message #{ser_obj} from base64..."
+    obj = Base64.urlsafe_decode64(ser_obj)
+    #puts "Decode: Object decoded as #{obj}. Doing Marshal load..."
+    ret = Marshal.load(obj)
+    #puts "Decode: Marshal loaded as #{ret}"
+    ret
   end
 
   def is_a_link?(s)
