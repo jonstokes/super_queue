@@ -48,12 +48,11 @@ queue.destroy
 * :buffer_size            => 100   #5 is the minimum
 * :replace_existing_queue => false
 * :namespace              => ""
-* :localize_queue         => true
 * :visibility_timeout     => 30    #in seconds. Max is 12 hours.
 
 Let's go through these options one at a time.
 
-### AWS credentials for fog
+### AWS credentials
 This should be obvious.
 
 ### Name
@@ -86,19 +85,6 @@ this. Note that a delete_then_recreate on SQS takes a minimum of 60s.
 
 ### Namespace
 If you want to namespace the queue on SQS, you can do that here.
-
-### Localized_queues
-In the application that I developed SuperQueue for (i.e. using with
-Sidekiq and Anemone), I need the queues to act like local memory (but
-with infinite size). So I don't want
-the same code trying to generate the same queue names on different
-machines. If you choose to localize the queues, then, it grabs your
-local IP, creates an md5 hash of it, and uses that hash to namespace the
-queue (in addition to any other namespacing you've done).
-
-Localized queues are the default. Just set this to "false" if you want
-to turn it off and have queues that are easily visible by simple
-namespace + name combos from other machines.
 
 ### Visibility timeout 
 Whenever a pop is executed against an empty out_buffer, SuperQueue wakes
@@ -175,10 +161,10 @@ soon. But if absolutely strict ordering matters for you, then SuperQueue isn't a
 good choice.
 
 ## Mocking
-If you're running tests with SuperQueue, you probably don't want to work
-with a live SQS queue for time and cost reasons. So just call
-SuperQueue.mock!, and SuperQueue will use fog's mock library to simulate
-SQS calls. All functions should still work in mocking mode.
+The version prior to 0.2.1 supports mocking through fog. However, fog
+had a ton of problems, so I switched to aws-sdk and now all is well.
+However, I haven't yet figured out how to mock with aws-sdk. Once I do,
+I'll post an update.
 
 ## Misc Notes
 I created this as a drop-in solution for the anemone gem. The idea is to
