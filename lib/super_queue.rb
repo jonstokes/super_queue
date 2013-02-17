@@ -1,8 +1,6 @@
 require 'aws-sdk'
 require 'base64'
-require 'socket'
 require 'digest/md5'
-require 'zlib'
 
 class SuperQueue
 
@@ -25,6 +23,7 @@ class SuperQueue
     AWS.eager_autoload! # for thread safety
     check_opts(opts)
     @buffer_size = opts[:buffer_size] || 100
+    @use_s3 = opts[:use_s3]
     @queue_name = generate_queue_name(opts)
     @request_count = 0
     initialize_aws(opts)
@@ -230,15 +229,15 @@ class SuperQueue
       batch.each do |message|
         obj = decode(message.body)
         unless obj.is_a?(SuperQueue::S3Pointer)
-          messages << { 
-            :payload    => obj, 
-            :sqs_handle => message 
+          messages << {
+            :payload    => obj,
+            :sqs_handle => message
           }
         else
           p = fetch_payload_from_s3(obj)
-          messages << { 
-            :payload    => p, 
-            :sqs_handle => message, 
+          messages << {
+            :payload    => p,
+            :sqs_handle => message,
             :s3_key     => obj.s3_key } if p
         end
       end
@@ -270,7 +269,7 @@ class SuperQueue
   end
 
   def should_send_to_s3?(p)
-    defined?(Anemone) && defined?(Anemone::Page) && (p.is_a? Anemone::Page)
+    @use_s3
   end
 
   def sqs_length
