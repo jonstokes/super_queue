@@ -1,7 +1,7 @@
 SuperQueue
 ==========
 
-SuperQueue is a thread-safe, SQS-backed queue structure for ruby that works just like a normal queue, except it's essentially infinite because it uses SQS on the back end.
+SuperQueue is a thread-safe, SQS- and S3-backed queue structure for ruby that works just like a normal queue, except it's essentially infinite because it uses SQS (and S3 optionally) on the back end.
 
 To install, just "gem install super_queue".
 
@@ -45,6 +45,7 @@ queue.destroy
 
 ## Optional options (=> default)
 * :name                   =>       #randomly generated name
+* :use_s3                 => false
 * :buffer_size            => 100   #5 is the minimum
 * :replace_existing_queue => false
 * :namespace              => ""
@@ -61,6 +62,19 @@ recommended to use this if you don't plan to destroy the queue via the
 destroy method. Otherwise, SuperQueue generates a random name for it,
 and you'll end up with these randomly named SQS queues on your AWS
 account.
+
+### Use S3
+By default, the maximum message size for an SQS message is 64K. If you
+want to store objects larger than 64K, you should set :use_s3 => true in
+the options hash. This will cause SuperQueue to store your object on S3,
+than then store a pointer to the object (an s3 key, basically) in SQS.
+So every object that you push will first be dumped, encoded, and then go
+to S3, and the S3 key will be pushed into the queue. When the pointer is
+popped, SuperQueue will fetch it from S3 using the popped pointer.
+
+The S3 bucket names will be the same as the SQS queue names, so whatever
+queue name and namespace combo you pick will determine the S3 and SQS
+names.
 
 ### Buffer size
 For responsiveness and other reasons, SuperQueue uses two normal queues
@@ -132,10 +146,8 @@ is useful for keeping track of costs.
 Note that this number will sometimes be
 less than the number of push and pop calls you've made to SuperQueue, because in some cases
 SuperQueue will bypass SQS and move objects directly between buffers in order to
-optimize cost. 
-
-### #localized?
-Returns whether it's localized or not.
+optimize cost. SuperQueue also batches reads and writes when it can to
+further control costs.
 
 ### #name
 Returns the full name of the queue on SQS, with any namespace and
@@ -169,11 +181,9 @@ I'll post an update.
 ## Misc Notes
 I created this as a drop-in solution for the anemone gem. The idea is to
 swap out anemone's link and page queues with SuperQueues, and solve the
-infinite memory problem that plagues the gem. I've yet to test this with
-a live crawl, but that'll happen in the next week or so.
+infinite memory problem that plagues the gem. I've tested this with some
+live crawls and so far it works really well, and fixes the memory
+problems that anemone has.
 
 I bring this up, because you may notice some peculiarities in the code
-that arise from its specific intended use. For instance, I check to see
-if an object is a URL string before pushing it, and if it is, I push it
-as a string; all other objects get marshalled and then base64-encoded
-before being pushed.
+that arise from its specific intended use.

@@ -368,20 +368,17 @@ class SuperQueue
 
   def retryable(options = {}, &block)
     opts = { :tries => 1, :on => Exception }.merge(options)
-
     retry_exception, retries = opts[:on], opts[:tries]
-
     begin
       return yield
     rescue retry_exception
       retry if (retries -= 1) > 0
     end
-
     yield
   end
 
   #
-  # Virtul attributes and convenience methods
+  # Virtual attributes and convenience methods
   #
   def q_url
     return @q_url if @q_url
@@ -400,9 +397,8 @@ class SuperQueue
   end
 
   #
-  # Maintence thread-related methods
+  # Maintenance thread-related methods
   #
-
   def collect_garbage
     loop do
       #This also needs a condition to clear the del queue if there are any handles where the invisibility is about to expire
