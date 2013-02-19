@@ -249,7 +249,7 @@ class SuperQueue
   def send_payload_to_s3(p)
     dump = Marshal.dump(p)
     digest = Digest::MD5.hexdigest(dump)
-    return digest if @bucket.objects[digest].exists?
+    return S3Pointer.new(digest) if @bucket.objects[digest].exists?
     retryable(:tries => 5) { @bucket.objects[digest].write(dump) }
     S3Pointer.new(digest)
   end
