@@ -23,8 +23,8 @@ class SuperQueue
     AWS.eager_autoload! # for thread safety
     check_opts(opts)
     @buffer_size = opts[:buffer_size] || 100
-    @use_s3 = opts[:use_s3]
     @queue_name = generate_queue_name(opts)
+    @bucket_name = opts[:bucket_name] || queue_name
     @request_count = 0
     initialize_aws(opts)
 
@@ -64,14 +64,10 @@ class SuperQueue
     check_for_errors
     @mutex.synchronize {
       loop do
-        if @out_buffer.empty?
-          if fill_out_buffer_from_sqs_queue || fill_out_buffer_from_in_buffer
-            return pop_out_buffer
-          else
-            raise ThreadError, "queue empty" if non_block
-            @waiting.push Thread.current
-            @mutex.sleep
-          end
+        if @out_buffer.empty? && !(fill_out_buffer_from_sqs_queue || fill_out_buffer_from_in_buffer)
+          raise ThreadError, "queue empty" if non_block
+          @waiting.push Thread.current
+          @mutex.sleep
         else
           return pop_out_buffer
         end
@@ -167,7 +163,7 @@ class SuperQueue
   end
 
   def open_s3_bucket
-    @s3.buckets[queue_name].exists? ? @s3.buckets[queue_name] : @s3.buckets.create(queue_name)
+    @s3.buckets[@bucket_name].exists? ? @s3.buckets[@bucket_name] : @s3.buckets.create(@bucket_name)
   end
 
   def find_queue_by_name
@@ -196,24 +192,7 @@ class SuperQueue
     raise "Couldn't create queue #{queue_name}, or delete existing queue by this name." if q_url.nil?
   end
 
-  def send_messages_to_queue
-    number_of_batches = @in_buffer.size / 10
-    number_of_batches += 1 if @in_buffer.size % 10
-    batches = []
-    number_of_batches.times do
-      batch = []
-      10.times do
-        next if @in_buffer.empty?
-        p = @in_buffer.shift
-        unless should_send_to_s3?(p)
-          batch << encode(p)
-        else
-          batch << encode(send_payload_to_s3(p))
-        end
-      end
-      batches << batch
-    end
-
+  def send_messages_to_queue(batches)
     batches.each do |b|
       @request_count += 1
       @sqs_queue.batch_send(b) if b.any?
@@ -227,31 +206,18 @@ class SuperQueue
     number_of_batches.times do
       batch = @sqs_queue.receive_messages(:limit => 10).compact
       batch.each do |message|
-        obj = decode(message.body)
-        unless obj.is_a?(SuperQueue::S3Pointer)
-          messages << {
-            :payload    => obj,
-            :sqs_handle => message
-          }
-        else
-          p = fetch_payload_from_s3(obj)
-          messages << {
-            :payload    => p,
-            :sqs_handle => message,
-            :s3_key     => obj.s3_key } if p
-        end
+        messages << message
       end
       @request_count += 1
     end
     messages
   end
 
-  def send_payload_to_s3(p)
-    dump = Marshal.dump(p)
-    digest = Digest::MD5.hexdigest(dump)
-    return S3Pointer.new(digest) if @bucket.objects[digest].exists?
-    retryable(:tries => 5) { @bucket.objects[digest].write(dump) }
-    S3Pointer.new(digest)
+  def send_payload_to_s3(encoded_message)
+    key = "#{queue_name}/#{Digest::MD5.hexdigest(encoded_message)}"
+    return S3Pointer.new(key) if @bucket.objects[key].exists?
+    retryable(:tries => 5) { @bucket.objects[key].write(encoded_message, :reduced_redundancy => true) }
+    S3Pointer.new(key)
   end
 
   def fetch_payload_from_s3(pointer)
@@ -268,8 +234,8 @@ class SuperQueue
     payload
   end
 
-  def should_send_to_s3?(p)
-    @use_s3
+  def should_send_to_s3?(encoded_message)
+    encoded_message.bytesize > 64000
   end
 
   def sqs_length
@@ -302,11 +268,24 @@ class SuperQueue
     nil_count = 0
     while (@out_buffer.size < @buffer_size) && (nil_count < 2)
       messages = get_messages_from_queue(@buffer_size - @out_buffer.size)
-      if messages.empty?
-        nil_count += 1
-      else
-        messages.each { |m| @out_buffer.push(m) }
+      if messages.any?
+        messages.each do |message|
+          obj = decode(message.body)
+          unless obj.is_a?(SuperQueue::S3Pointer)
+            @out_buffer.push(
+              :payload    => obj,
+              :sqs_handle => message)
+          else
+            p = fetch_payload_from_s3(obj)
+            @out_buffer.push(
+              :payload    => p,
+              :sqs_handle => message,
+              :s3_key     => obj.s3_key) if p
+          end
+        end
         nil_count = 0
+      else
+        nil_count += 1
       end
     end
     !@out_buffer.empty?
@@ -332,9 +311,28 @@ class SuperQueue
   end
 
   def clear_in_buffer
+    batches = []
+    message_stash = []
     while !@in_buffer.empty? do
-      send_messages_to_queue
+      batch = message_stash
+      message_stash = []
+      message_count = batch.size
+      batch_too_big = false
+      while !@in_buffer.empty? && !batch_too_big && (message_count < 10) do
+        encoded_message = encode(@in_buffer.shift)
+        message = should_send_to_s3?(encoded_message) ? encode(send_payload_to_s3(encoded_message)) : encoded_message
+        if (batch_bytesize(batch) + message.bytesize) < 64000
+          batch << message
+          batch_too_big == false
+          message_count += 1
+        else
+          message_stash << message
+          batch_too_big = true
+        end
+      end
+      batches << batch
     end
+    send_messages_to_queue(batches)
   end
 
   #
@@ -368,17 +366,28 @@ class SuperQueue
 
   def retryable(options = {}, &block)
     opts = { :tries => 1, :on => Exception }.merge(options)
+
     retry_exception, retries = opts[:on], opts[:tries]
+
     begin
       return yield
     rescue retry_exception
       retry if (retries -= 1) > 0
     end
+
     yield
   end
 
+  def batch_bytesize(batch)
+    sum = 0
+    batch.each do |string|
+      sum += string.bytesize
+    end
+    sum
+  end
+
   #
-  # Virtual attributes and convenience methods
+  # Virtul attributes and convenience methods
   #
   def q_url
     return @q_url if @q_url
@@ -397,7 +406,7 @@ class SuperQueue
   end
 
   #
-  # Maintenance thread-related methods
+  # Maintence thread-related methods
   #
   def collect_garbage
     loop do

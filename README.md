@@ -46,6 +46,7 @@ queue.destroy
 ## Optional options (=> default)
 * :name                   =>       #randomly generated name
 * :use_s3                 => false
+* :bucket_name            => same as queue name
 * :buffer_size            => 100   #5 is the minimum
 * :replace_existing_queue => false
 * :namespace              => ""
@@ -75,6 +76,11 @@ popped, SuperQueue will fetch it from S3 using the popped pointer.
 The S3 bucket names will be the same as the SQS queue names, so whatever
 queue name and namespace combo you pick will determine the S3 and SQS
 names.
+
+### Bucket name
+You can pass SuperQueue the name of an S3 bucket to use. If you don't
+include one, then it'll use or create one that matches the name of the
+SQS queue.
 
 ### Buffer size
 For responsiveness and other reasons, SuperQueue uses two normal queues
