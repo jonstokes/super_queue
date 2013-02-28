@@ -1,8 +1,6 @@
 require 'aws-sdk'
 require 'base64'
-require 'socket'
 require 'digest/md5'
-require 'zlib'
 
 class SuperQueue
 
