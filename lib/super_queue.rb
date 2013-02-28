@@ -1,6 +1,8 @@
 require 'aws-sdk'
 require 'base64'
+require 'socket'
 require 'digest/md5'
+require 'zlib'
 
 class SuperQueue
 
@@ -224,7 +226,7 @@ class SuperQueue
     payload = nil
     retries = 0
     begin
-      payload = Marshal.load(@bucket.objects[pointer.s3_key].read)
+      payload = decode(@bucket.objects[pointer.s3_key].read)
     rescue AWS::S3::Errors::NoSuchKey
       return nil
     rescue
