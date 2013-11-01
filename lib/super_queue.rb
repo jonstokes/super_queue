@@ -20,12 +20,13 @@ class SuperQueue
   end
 
   def initialize(opts)
-    AWS.eager_autoload! # for thread safety
     check_opts(opts)
     @buffer_size = opts[:buffer_size] || 100
     @queue_name = generate_queue_name(opts)
     @bucket_name = opts[:bucket_name] || queue_name
-    @request_count = 0
+    @write_count = 0
+    @read_count = 0
+    @delete_count = 0
     initialize_aws(opts)
 
     @waiting = []
@@ -44,6 +45,8 @@ class SuperQueue
         raise @gc_error
       end
     end
+
+    fill_out_buffer_from_sqs_queue
   end
 
   def push(p)
@@ -78,8 +81,7 @@ class SuperQueue
   def length
     check_for_errors
     @mutex.synchronize {
-      sqsl = sqs_length
-      return sqsl + @in_buffer.size + @out_buffer.size
+      return sqs_length + @in_buffer.size + @out_buffer.size
     }
   end
 
@@ -89,7 +91,9 @@ class SuperQueue
   end
 
   def empty?
-    self.length == 0
+    len = 0
+    2.times { len += self.length; sleep(0.01) }
+    len == 0
   end
 
   def clear
@@ -116,7 +120,7 @@ class SuperQueue
 
   def sqs_requests
     check_for_errors
-    @request_count
+    @write_count + @read_count + @delete_count
   end
 
   alias enq push
@@ -163,19 +167,27 @@ class SuperQueue
   end
 
   def open_s3_bucket
-    @s3.buckets[@bucket_name].exists? ? @s3.buckets[@bucket_name] : @s3.buckets.create(@bucket_name)
+    retryable(:tries => 3) do
+      @s3.buckets[@bucket_name].exists? ? @s3.buckets[@bucket_name] : @s3.buckets.create(@bucket_name)
+    end
   end
 
   def find_queue_by_name
+    retries = 0
     begin
       @sqs.queues.named(queue_name)
     rescue AWS::SQS::Errors::NonExistentQueue
       return nil
+    rescue NoMethodError => e
+      sleep 1
+      retries += 1
+      retry if retries < 5
+      raise e
     end
   end
 
   def new_sqs_queue(opts)
-    @request_count += 1
+    @read_count += 1
     if opts[:visibility_timeout]
       @sqs.queues.create(queue_name, { :visibility_timeout => opts[:visibility_timeout] })
     else
@@ -194,8 +206,10 @@ class SuperQueue
 
   def send_messages_to_queue(batches)
     batches.each do |b|
-      @request_count += 1
-      @sqs_queue.batch_send(b) if b.any?
+      @write_count += 1
+      retryable(:tries => 5) do
+        @sqs_queue.batch_send(b)
+      end if b.any?
     end
   end
 
@@ -204,18 +218,17 @@ class SuperQueue
     number_of_batches = number_of_messages_to_receive / 10
     number_of_batches += 1 if number_of_messages_to_receive % 10
     number_of_batches.times do
-      batch = @sqs_queue.receive_messages(:limit => 10).compact
-      batch.each do |message|
-        messages << message
-      end
-      @request_count += 1
+      retryable(:retries => 5) { messages += @sqs_queue.receive_messages(:limit => 10).compact }
+      @read_count += 1
     end
-    messages
+    messages.compact
   end
 
   def send_payload_to_s3(encoded_message)
     key = "#{queue_name}/#{Digest::MD5.hexdigest(encoded_message)}"
-    return S3Pointer.new(key) if @bucket.objects[key].exists?
+    key_exists = false
+    retryable(:tries => 5) { key_exists = @bucket.objects[key].exists? }
+    return S3Pointer.new(key) if key_exists
     retryable(:tries => 5) { @bucket.objects[key].write(encoded_message, :reduced_redundancy => true) }
     S3Pointer.new(key)
   end
@@ -239,24 +252,32 @@ class SuperQueue
   end
 
   def sqs_length
-    n = @sqs_queue.approximate_number_of_messages
+    n = 0
+    retryable(:retries => 5) { n = @sqs_queue.approximate_number_of_messages }
+    @read_count += 1
     return n.is_a?(Integer) ? n : 0
   end
 
   def delete_aws_resources
-    @request_count += 1
+    @delete_count += 1
     @sqs_queue.delete
-    @bucket.delete!
+    begin
+      @bucket.clear!
+      sleep 1
+    end until @bucket.empty?
+    @bucket.delete
   end
 
   def clear_deletion_queue
-    while !@deletion_queue.empty?
-      sqs_handles = @deletion_queue[0..9].map { |m| m[:sqs_handle] }.compact
-      s3_keys = @deletion_queue[0..9].map { |m| m[:s3_key] }.compact
-      10.times { @deletion_queue.shift }
-      @sqs_queue.batch_delete(sqs_handles) if sqs_handles.any?
-      s3_keys.each { |key| @bucket.objects[key].delete }
-      @request_count += 1
+    retryable(:tries => 4) do
+      while !@deletion_queue.empty?
+        sqs_handles = @deletion_queue[0..9].map { |m| m[:sqs_handle].is_a?(AWS::SQS::ReceivedMessage) ? m[:sqs_handle] : nil }.compact
+        s3_keys = @deletion_queue[0..9].map { |m| m[:s3_key] }.compact
+        10.times { @deletion_queue.shift }
+        @sqs_queue.batch_delete(sqs_handles) if sqs_handles.any?
+        s3_keys.each { |key| @bucket.objects[key].delete }
+        @delete_count += 1
+      end
     end
   end
 
@@ -266,7 +287,7 @@ class SuperQueue
   def fill_out_buffer_from_sqs_queue
     return false if sqs_length == 0
     nil_count = 0
-    while (@out_buffer.size < @buffer_size) && (nil_count < 2)
+    while (@out_buffer.size < @buffer_size) && (nil_count < 5)
       messages = get_messages_from_queue(@buffer_size - @out_buffer.size)
       if messages.any?
         messages.each do |message|
@@ -276,14 +297,18 @@ class SuperQueue
               :payload    => obj,
               :sqs_handle => message)
           else
-            p = fetch_payload_from_s3(obj)
-            @out_buffer.push(
-              :payload    => p,
-              :sqs_handle => message,
-              :s3_key     => obj.s3_key) if p
+            if p = fetch_payload_from_s3(obj)
+              @out_buffer.push(
+                :payload    => p,
+                :sqs_handle => message,
+                :s3_key     => obj.s3_key)
+            else
+              @deletion_buffer.push(:sqs_handle => message, :s3_key => obj.s3_key)
+            end
           end
         end
         nil_count = 0
+        sleep 0.01
       else
         nil_count += 1
       end
@@ -414,6 +439,7 @@ class SuperQueue
       @mutex.synchronize { fill_deletion_queue_from_buffer } if @deletion_buffer.any?
       Thread.pass
       @mutex.synchronize { clear_deletion_queue } if @deletion_queue.any?
+      sleep 1
     end
   end
 end
