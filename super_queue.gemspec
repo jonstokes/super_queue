@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name        = 'super_queue'
-  s.version     = '0.3.3'
+  s.version     = '0.3.4'
   s.date        = "#{Time.now.strftime("%Y-%m-%d")}"
   s.summary     = "A thread-safe, SQS- and S3-backed queue structure for ruby that works just like a normal queue, except it's essentially infinite and can use very little memory."
   s.description = "A thread-safe SQS- and S3-backed queue."
